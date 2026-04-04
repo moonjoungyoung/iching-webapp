@@ -24,7 +24,7 @@
 
   --font-brush: 'Song Myung', 'Noto Serif KR', 'Gungsuh', '궁서', serif;
   --font-batang: 'Song Myung', 'Gowun Batang', serif;
-  --font-hanja: 'Zhi Mang Xing', 'Ma Shan Zheng', 'Liu Jian Mao Cao', 'Long Cang', 'LXGW WenKai TC', serif;
+  --font-hanja: 'Ma Shan Zheng', 'Zhi Mang Xing', 'Liu Jian Mao Cao', 'Long Cang', 'LXGW WenKai TC', serif;
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
