@@ -7,6 +7,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Hahmlet:wght@400;500;700;900&family=LXGW+WenKai+TC:wght@400;700&family=Zhi+Mang+Xing&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    /* 크리티컬 CSS — FOUC 방지 */
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#0c0c0c;overflow:hidden}
+    #scene,#ui-overlay,#result-modal{opacity:0}
+    #loading-screen{position:fixed;inset:0;z-index:9999;background:#0c0c0c;display:flex;align-items:center;justify-content:center}
+    .loading-char{font-family:serif;font-size:3rem;color:#a07818;animation:p 1.5s ease-in-out infinite}
+    @keyframes p{0%,100%{opacity:.3}50%{opacity:1}}
+  </style>
 </head>
 <body>
   <div id="loading-screen">

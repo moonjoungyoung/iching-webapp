@@ -46,6 +46,12 @@ body {
 
 button { touch-action: manipulation; }
 
+/* === CSS 로드 후 UI 표시 (크리티컬 CSS에서 숨겨둔 것 해제) === */
+#scene { opacity: 1; }
+#ui-overlay { opacity: 1; }
+#result-modal { opacity: 1; }
+#result-modal.hidden { opacity: 0; }
+
 /* === 3D Canvas === */
 #scene {
   position: fixed;
