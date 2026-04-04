@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>한자 폰트 비교 — 晉</title>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Zhi+Mang+Xing&family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+WenKai+TC:wght@400;700&family=ZCOOL+XiaoWei&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+KuaiLe&family=Noto+Serif+SC:wght@400;700&family=Noto+Serif+TC:wght@400;700&family=Noto+Sans+SC:wght@400;700&family=Noto+Serif+HK:wght@400;700&family=Huninn&family=Song+Myung&family=Hahmlet:wght@700&display=swap" rel="stylesheet">
+<style>
+  @font-face { font-family: 'YanShi YouRan'; src: url('/YanShiYouRanXiaoKai.ttf') format('truetype'); }
+  body { background: #0c0c0c; color: #d6a01d; font-family: sans-serif; padding: 20px; }
+  h1 { font-size: 1.2rem; margin-bottom: 20px; color: #e54d42; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
+  .card {
+    background: #1a1816; border: 1px solid #333; border-radius: 12px;
+    padding: 16px; text-align: center;
+  }
+  .char { font-size: 4rem; line-height: 1.2; color: #fff8e7; margin-bottom: 8px; }
+  .name { font-size: 0.7rem; color: #a07818; word-break: break-all; }
+  .tag { font-size: 0.6rem; color: #555; margin-top: 4px; }
+  .current .name { color: #e54d42; }
+  .samples { margin-top: 12px; font-size: 1.2rem; color: #bbb; line-height: 2; }
+  .card { cursor: pointer; transition: border-color 0.2s; }
+  .card:active { border-color: #d6a01d; }
+  .copied { color: #e54d42 !important; font-size: 0.7rem; }
+</style>
+</head>
+<body>
+<h1>한자 폰트 비교 — 晉 + 訟 噬 嗑 遯 蹇 萃 鼎 巽 渙 孚</h1>
+<div class="grid" id="grid"></div>
+<script>
+const fonts = [
+  { name: 'YanShi YouRan', tag: '★ 신규 후보 (演示悠然小楷)' },
+  { name: 'Ma Shan Zheng', tag: '현재 1순위', current: true },
+  { name: 'Zhi Mang Xing', tag: '현재 2순위', current: true },
+  { name: 'Liu Jian Mao Cao', tag: '현재 3순위', current: true },
+  { name: 'Long Cang', tag: '현재 4순위', current: true },
+  { name: 'LXGW WenKai TC', tag: '현재 5순위', current: true },
+  { name: 'ZCOOL XiaoWei', tag: '추가 후보' },
+  { name: 'ZCOOL QingKe HuangYou', tag: '추가 후보' },
+  { name: 'ZCOOL KuaiLe', tag: '추가 후보' },
+  { name: 'Noto Serif SC', tag: '추가 후보' },
+  { name: 'Noto Serif TC', tag: '추가 후보' },
+  { name: 'Noto Sans SC', tag: '추가 후보' },
+  { name: 'Noto Serif HK', tag: '추가 후보' },
+  { name: 'Huninn', tag: '추가 후보' },
+  { name: 'Song Myung', tag: '현재 한글용' },
+  { name: 'Hahmlet', tag: '이전 한글용' },
+];
+
+const testChars = '晉訟噬嗑遯蹇萃鼎巽渙孚';
+const grid = document.getElementById('grid');
+
+fonts.forEach(f => {
+  const card = document.createElement('div');
+  card.className = 'card' + (f.current ? ' current' : '');
+  card.innerHTML = `
+    <div class="char" style="font-family:'${f.name}',serif">晉</div>
+    <div class="name">${f.name}</div>
+    <div class="tag">${f.tag}</div>
+    <div class="samples" style="font-family:'${f.name}',serif">${testChars}</div>
+  `;
+  card.addEventListener('click', () => {
+    navigator.clipboard.writeText(f.name);
+    const nameEl = card.querySelector('.name');
+    nameEl.classList.add('copied');
+    nameEl.textContent = '복사됨: ' + f.name;
+    setTimeout(() => { nameEl.classList.remove('copied'); nameEl.textContent = f.name; }, 1200);
+  });
+  grid.appendChild(card);
+});
+</script>
+</body>
+</html>
