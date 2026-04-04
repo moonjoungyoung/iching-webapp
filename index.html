@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>주역 점괘 — 동전점법</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Hahmlet:wght@400;500;700;900&family=LXGW+WenKai+TC:wght@400;700&family=Zhi+Mang+Xing&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="loading-screen">
+    <p class="loading-char">卦</p>
+  </div>
+  <canvas id="scene"></canvas>
+
+  <div id="ui-overlay">
+    <header id="header">
+      <h1 class="title-hanja">周易占卦</h1>
+      <p class="subtitle">마음을 가다듬고 동전을 던지세요</p>
+    </header>
+
+    <div id="spacer"></div>
+
+    <div id="bottom-area">
+      <div id="hexagram-panel">
+        <div id="hexagram-lines"></div>
+        <div id="throw-counter">
+          <span id="current-throw">0</span> / 6
+        </div>
+      </div>
+      <div id="coin-result-display"></div>
+      <div id="controls">
+        <button id="throw-btn">擲&ensp;던지기</button>
+        <button id="view-result-btn" class="hidden">결과 보기</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="result-modal" class="hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <button id="modal-close-btn" aria-label="닫기">✕</button>
+      <div class="modal-scroll">
+        <div class="result-primary">
+          <p class="result-label">현재의 괘</p>
+          <div id="result-hex-visual" class="result-lines"></div>
+          <h2 id="result-name" class="result-name"></h2>
+          <p id="result-full-name" class="result-subname"></p>
+          <div class="diamond-ornament">◆</div>
+          <p id="result-keyword" class="result-keyword"></p>
+          <blockquote id="result-judgment" class="result-quote"></blockquote>
+          <div class="line-ornament"></div>
+          <p id="result-image" class="result-image"></p>
+        </div>
+
+        <div id="result-changing" class="hidden">
+          <div class="changing-bridge"><span>변화할 괘</span></div>
+          <div class="result-changed">
+            <div id="changed-hex-visual" class="result-lines"></div>
+            <h3 id="changed-name" class="result-name"></h3>
+            <p id="changed-full-name" class="result-subname"></p>
+            <div class="diamond-ornament">◆</div>
+            <p id="changed-keyword" class="result-keyword"></p>
+            <blockquote id="changed-judgment" class="result-quote"></blockquote>
+            <div class="line-ornament"></div>
+            <p id="changed-image" class="result-image"></p>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="share-btn">공유하기</button>
+          <button id="new-reading-btn">다시 점치기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

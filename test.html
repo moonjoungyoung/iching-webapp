@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>동전 물리 편향 테스트</title>
+  <style>
+    body { background: #111; color: #eee; font-family: monospace; padding: 20px; }
+    h1 { color: #d6a01d; }
+    .result { margin: 4px 0; }
+    .yang { color: #d6a01d; }
+    .yin { color: #888; }
+    #summary { margin-top: 20px; padding: 16px; background: #222; border: 1px solid #d6a01d; border-radius: 8px; font-size: 1.2em; }
+    #progress { color: #ca6924; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>동전 물리 편향 테스트 (100회)</h1>
+  <p>현재 물리 파라미터로 동전 3개를 100번 던져 양/음 분포를 확인합니다.</p>
+  <div id="progress">준비 중...</div>
+  <div id="summary"></div>
+  <div id="log"></div>
+
+  <script type="module">
+    import * as CANNON from '/node_modules/cannon-es/dist/cannon-es.js';
+
+    // === 물리 파라미터 (coins.js, physics.js, game.js 와 동일) ===
+    const COIN_RADIUS = 0.5;
+    const PHYS_HEIGHT = 0.12;
+    const GRAVITY = -30;
+    const TOTAL_THROWS = 100;
+    const SETTLE_THRESHOLD = 0.15;
+    const SETTLE_FRAMES = 15;
+    const MAX_STEPS = 600; // 10초 분량 (60fps * 10s)
+
+    const coinPhysMat = new CANNON.Material('coin');
+    const groundPhysMat = new CANNON.Material('ground');
+
+    function createWorld() {
+      const world = new CANNON.World({ gravity: new CANNON.Vec3(0, GRAVITY, 0) });
+      world.broadphase = new CANNON.SAPBroadphase(world);
+      world.solver.iterations = 10;
+
+      world.addContactMaterial(new CANNON.ContactMaterial(coinPhysMat, groundPhysMat, {
+        friction: 0.4, restitution: 0.3,
+      }));
+      world.addContactMaterial(new CANNON.ContactMaterial(coinPhysMat, coinPhysMat, {
+        friction: 0.2, restitution: 0.35,
+      }));
+
+      const ground = new CANNON.Body({ mass: 0, material: groundPhysMat, shape: new CANNON.Plane() });
+      ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+      world.addBody(ground);
+
+      // 벽 4개
+      [
+        { pos: [0,1,-4], rot: [0,0,0] },
+        { pos: [0,1,4], rot: [0,Math.PI,0] },
+        { pos: [-4,1,0], rot: [0,Math.PI/2,0] },
+        { pos: [4,1,0], rot: [0,-Math.PI/2,0] },
+      ].forEach(({ pos, rot }) => {
+        const w = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
+        w.position.set(...pos);
+        w.quaternion.setFromEuler(...rot);
+        world.addBody(w);
+      });
+
+      return world;
+    }
+
+    function createCoinBodies(world) {
+      const bodies = [];
+      for (let i = 0; i < 3; i++) {
+        const shape = new CANNON.Cylinder(COIN_RADIUS, COIN_RADIUS, PHYS_HEIGHT, 12);
+        const body = new CANNON.Body({
+          mass: 0.08, material: coinPhysMat,
+          linearDamping: 0.5, angularDamping: 0.6,
+        });
+        body.addShape(shape);
+        body.allowSleep = true;
+        body.sleepSpeedLimit = 0.1;
+        body.sleepTimeLimit = 0.3;
+        world.addBody(body);
+        bodies.push(body);
+      }
+      return bodies;
+    }
+
+    function throwOnce(bodies) {
+      const spread = 0.6;
+      bodies.forEach((body, i) => {
+        const ox = (i - 1) * spread + (Math.random() - 0.5) * 0.3;
+        const oz = (Math.random() - 0.5) * 0.4;
+        body.position.set(ox, 2.0 + Math.random() * 0.3, oz);
+
+        // 랜덤 초기 회전
+        const ax = Math.random()-0.5, ay = Math.random()-0.5, az = Math.random()-0.5;
+        const len = Math.sqrt(ax*ax + ay*ay + az*az) || 1;
+        const angle = Math.random() * Math.PI * 2;
+        const s = Math.sin(angle/2) / len;
+        body.quaternion.set(ax*s, ay*s, az*s, Math.cos(angle/2));
+
+        body.velocity.set(
+          (Math.random()-0.5)*0.8,
+          4 + Math.random()*2.5,
+          (Math.random()-0.5)*0.8
+        );
+        body.angularVelocity.set(
+          (Math.random()-0.5)*25,
+          (Math.random()-0.5)*10,
+          (Math.random()-0.5)*25
+        );
+        body.wakeUp();
+      });
+    }
+
+    function isHeadsUp(body) {
+      const localUp = new CANNON.Vec3(0, 1, 0);
+      const worldUp = new CANNON.Vec3();
+      body.quaternion.vmult(localUp, worldUp);
+      const flatness = Math.abs(worldUp.y);
+      if (flatness > 0.3) return worldUp.y > 0;
+      return Math.random() >= 0.5; // 세워진 경우 랜덤
+    }
+
+    function simulate(world, bodies) {
+      let settleCount = 0;
+      let forceSettled = false;
+
+      for (let step = 0; step < MAX_STEPS; step++) {
+        world.step(1/60);
+
+        if (step < 48) continue; // 0.8초 최소 대기
+
+        // 3.5초 타임아웃
+        if (step > 210) { forceSettled = true; break; }
+
+        const allSlow = bodies.every(b =>
+          b.velocity.length() < SETTLE_THRESHOLD &&
+          b.angularVelocity.length() < SETTLE_THRESHOLD
+        );
+
+        if (allSlow) {
+          settleCount++;
+          if (settleCount >= SETTLE_FRAMES) break;
+        } else {
+          settleCount = 0;
+        }
+      }
+
+      // 결과 읽기
+      let sum = 0;
+      const results = [];
+      bodies.forEach(b => {
+        let heads;
+        if (forceSettled) {
+          heads = Math.random() >= 0.5;
+        } else {
+          heads = isHeadsUp(b);
+        }
+        sum += heads ? 3 : 2;
+        results.push(heads);
+      });
+
+      return { sum, results, forceSettled };
+    }
+
+    // === 실행 ===
+    async function run() {
+      const progress = document.getElementById('progress');
+      const logEl = document.getElementById('log');
+      const summaryEl = document.getElementById('summary');
+
+      const world = createWorld();
+      const bodies = createCoinBodies(world);
+
+      let totalHeads = 0, totalTails = 0;
+      let forceCount = 0;
+      const valueCounts = { 6: 0, 7: 0, 8: 0, 9: 0 };
+
+      for (let t = 0; t < TOTAL_THROWS; t++) {
+        progress.textContent = `진행 중... ${t + 1} / ${TOTAL_THROWS}`;
+
+        throwOnce(bodies);
+        const { sum, results, forceSettled } = simulate(world, bodies);
+
+        const heads = results.filter(r => r).length;
+        const tails = 3 - heads;
+        totalHeads += heads;
+        totalTails += tails;
+        if (forceSettled) forceCount++;
+        valueCounts[sum]++;
+
+        const coins = results.map(r => r ? '陽' : '陰').join(' ');
+        const label = sum === 6 ? '老陰' : sum === 7 ? '少陽' : sum === 8 ? '少陰' : '老陽';
+        const cls = (sum === 7 || sum === 9) ? 'yang' : 'yin';
+
+        logEl.innerHTML += `<div class="result"><span class="${cls}">#${String(t+1).padStart(3)} ${coins} → ${sum} ${label}</span>${forceSettled ? ' ⏱️강제' : ''}</div>`;
+
+        // 렌더링 양보
+        if (t % 5 === 0) await new Promise(r => setTimeout(r, 0));
+      }
+
+      const total = totalHeads + totalTails;
+      const headsRatio = (totalHeads / total * 100).toFixed(1);
+      const tailsRatio = (totalTails / total * 100).toFixed(1);
+
+      summaryEl.innerHTML = `
+        <strong>═══ 결과 (${TOTAL_THROWS}회 × 동전 3개 = ${total}회 판정) ═══</strong><br><br>
+        <span class="yang">陽 (앞면): ${totalHeads}회 (${headsRatio}%)</span><br>
+        <span class="yin">陰 (뒷면): ${totalTails}회 (${tailsRatio}%)</span><br><br>
+        효값 분포:<br>
+        &nbsp; 6 (老陰 변효): ${valueCounts[6]}회<br>
+        &nbsp; 7 (少陽): ${valueCounts[7]}회<br>
+        &nbsp; 8 (少陰): ${valueCounts[8]}회<br>
+        &nbsp; 9 (老陽 변효): ${valueCounts[9]}회<br><br>
+        강제 안정 (타임아웃): ${forceCount}회 / ${TOTAL_THROWS}회<br><br>
+        <strong>${Math.abs(totalHeads - totalTails) < total * 0.15 ? '✅ 편향 없음 (±15% 이내)' : '⚠️ 편향 감지!'}</strong>
+      `;
+      progress.textContent = '완료!';
+    }
+
+    run();
+  </script>
+</body>
+</html>
