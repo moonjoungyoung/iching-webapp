@@ -2,7 +2,7 @@
 set -e
 
 BUCKET="gr.connectia.bio"
-DISTRIBUTION_ID="" # CloudFront 배포 후 여기에 ID 입력
+DISTRIBUTION_ID="E1U0F9QBSXFXU2"
 
 echo "=== 빌드 ==="
 npm run build

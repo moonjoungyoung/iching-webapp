@@ -67,8 +67,8 @@ button { touch-action: manipulation; }
   align-items: center;
   justify-content: space-between;
   padding:
-    calc(16px + var(--safe-top)) 16px
-    calc(16px + var(--safe-bottom)) 16px;
+    calc(24px + var(--safe-top)) 16px
+    calc(24px + var(--safe-bottom)) 16px;
 }
 
 /* --- Header --- */
