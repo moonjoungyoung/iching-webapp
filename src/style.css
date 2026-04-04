@@ -198,7 +198,7 @@ button { touch-action: manipulation; }
 #controls { pointer-events: auto; text-align: center; }
 
 #throw-btn {
-  font-family: var(--font-hanja);
+  font-family: var(--font-brush);
   font-size: 1.1rem;
   padding: 12px 36px;
   border-radius: 28px;
@@ -322,7 +322,7 @@ button { touch-action: manipulation; }
   margin-bottom: 4px;
 }
 
-.result-name .hanja {
+.hanja {
   font-family: var(--font-hanja);
   font-weight: 400;
 }
