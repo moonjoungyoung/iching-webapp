@@ -315,6 +315,11 @@ button { touch-action: manipulation; }
   margin-bottom: 4px;
 }
 
+.result-name .hanja {
+  font-family: var(--font-hanja);
+  font-weight: 400;
+}
+
 
 .result-subname {
   font-family: var(--font-brush);

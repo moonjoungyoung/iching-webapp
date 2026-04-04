@@ -82,7 +82,7 @@ export function showResult(primary, changed, lines) {
     els.resultHexVisual.appendChild(createLineElement(l.yang));
   });
 
-  els.resultName.textContent = `${primary.hanja} ${primary.name}`;
+  els.resultName.innerHTML = `<span class="hanja">${primary.hanja}</span> ${primary.name}`;
   els.resultFullName.textContent = primary.fullName;
   els.resultKeyword.textContent = primary.keyword;
   els.resultJudgment.textContent = primary.judgment;
@@ -96,7 +96,7 @@ export function showResult(primary, changed, lines) {
       const flippedYang = l.changing ? !l.yang : l.yang;
       els.changedHexVisual.appendChild(createLineElement(flippedYang));
     });
-    els.changedName.textContent = `${changed.hanja} ${changed.name}`;
+    els.changedName.innerHTML = `<span class="hanja">${changed.hanja}</span> ${changed.name}`;
     els.changedFullName.textContent = changed.fullName;
     els.changedKeyword.textContent = changed.keyword;
     els.changedJudgment.textContent = changed.judgment;
