@@ -7,6 +7,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Zhi+Mang+Xing&family=Liu+Jian+Mao+Cao&family=Long+Cang&family=LXGW+WenKai+TC:wght@400;700&family=ZCOOL+XiaoWei&family=ZCOOL+QingKe+HuangYou&family=ZCOOL+KuaiLe&family=Noto+Serif+SC:wght@400;700&family=Noto+Serif+TC:wght@400;700&family=Noto+Sans+SC:wght@400;700&family=Noto+Serif+HK:wght@400;700&family=Huninn&family=Song+Myung&family=Hahmlet:wght@700&display=swap" rel="stylesheet">
 <style>
   @font-face { font-family: 'YanShi YouRan'; src: url('/YanShiYouRanXiaoKai.ttf') format('truetype'); }
+  @font-face { font-family: 'Bakudai ExtraLight'; src: url('/Bakudai-ExtraLight.woff2') format('woff2'); }
+  @font-face { font-family: 'Bakudai Light'; src: url('/Bakudai-Light.woff2') format('woff2'); }
+  @font-face { font-family: 'Bakudai'; src: url('/Bakudai-Regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Bakudai Medium'; src: url('/Bakudai-Medium.woff2') format('woff2'); }
+  @font-face { font-family: 'Bakudai Bold'; src: url('/Bakudai-Bold.woff2') format('woff2'); }
   body { background: #0c0c0c; color: #d6a01d; font-family: sans-serif; padding: 20px; }
   h1 { font-size: 1.2rem; margin-bottom: 20px; color: #e54d42; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
@@ -18,7 +23,7 @@
   .name { font-size: 0.7rem; color: #a07818; word-break: break-all; }
   .tag { font-size: 0.6rem; color: #555; margin-top: 4px; }
   .current .name { color: #e54d42; }
-  .samples { margin-top: 12px; font-size: 1.2rem; color: #bbb; line-height: 2; }
+  .samples { margin-top: 12px; font-size: 2rem; color: #ddd; line-height: 1.8; letter-spacing: 0.1em; }
   .card { cursor: pointer; transition: border-color 0.2s; }
   .card:active { border-color: #d6a01d; }
   .copied { color: #e54d42 !important; font-size: 0.7rem; }
@@ -29,7 +34,12 @@
 <div class="grid" id="grid"></div>
 <script>
 const fonts = [
-  { name: 'YanShi YouRan', tag: '★ 신규 후보 (演示悠然小楷)' },
+  { name: 'Bakudai ExtraLight', tag: '★★ 莫大毛筆 ExtraLight' },
+  { name: 'Bakudai Light', tag: '★★ 莫大毛筆 Light' },
+  { name: 'Bakudai', tag: '★★ 莫大毛筆 Regular' },
+  { name: 'Bakudai Medium', tag: '★★ 莫大毛筆 Medium' },
+  { name: 'Bakudai Bold', tag: '★★ 莫大毛筆 Bold' },
+  { name: 'YanShi YouRan', tag: '★ 演示悠然小楷 간체' },
   { name: 'Ma Shan Zheng', tag: '현재 1순위', current: true },
   { name: 'Zhi Mang Xing', tag: '현재 2순위', current: true },
   { name: 'Liu Jian Mao Cao', tag: '현재 3순위', current: true },
@@ -47,7 +57,7 @@ const fonts = [
   { name: 'Hahmlet', tag: '이전 한글용' },
 ];
 
-const testChars = '晉訟噬嗑遯蹇萃鼎巽渙孚';
+const testChars = '乾坤屯蒙需訟師比畜履泰否謙豫隨蠱臨觀噬賁剝復妄頤坎離咸恆遯壯晉夷睽蹇解損益夬姤萃升困井革鼎震艮漸歸豐旅巽兌渙節孚濟';
 const grid = document.getElementById('grid');
 
 fonts.forEach(f => {
