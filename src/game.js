@@ -1,6 +1,7 @@
 import * as CANNON from 'cannon-es';
 import { isHeadsUp, resetCoins } from './coins.js';
 import { getHexagramNumber, getHexagramData } from './hexagrams.js';
+import { interpret } from './interpret.js';
 
 const TOTAL_THROWS = 6;
 const SETTLE_THRESHOLD = 0.15;
@@ -157,6 +158,7 @@ export function buildHexagram() {
   // 변효가 있는지 확인
   const hasChanging = state.lines.some(l => l.changing);
   let changed = null;
+  let changedNum = null;
 
   if (hasChanging) {
     // 변효를 뒤집은 지괘
@@ -164,11 +166,14 @@ export function buildHexagram() {
       if (l.changing) return l.yang ? 0 : 1; // 뒤집기
       return l.yang ? 1 : 0;
     });
-    const changedNum = getHexagramNumber(changedBits);
+    changedNum = getHexagramNumber(changedBits);
     changed = getHexagramData(changedNum);
   }
 
-  return { primary, changed, lines: state.lines };
+  // 점단: 변효 개수에 따른 해석
+  const interpretation = interpret(primaryNum, changedNum, state.lines);
+
+  return { primary, changed, lines: state.lines, interpretation };
 }
 
 /**

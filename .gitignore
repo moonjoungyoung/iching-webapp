@@ -4,3 +4,5 @@ dist
 .DS_Store
 .omc
 coin-front-old.png
+
+lambda/deploy/function.zip

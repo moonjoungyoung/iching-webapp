@@ -1,0 +1,17 @@
+{
+  "question": "그럼 구체적으로 언제쯤 움직이는 게 좋을까요?",
+  "history": [
+    { "role": "user", "content": "새로운 일을 시작해도 될까요?" },
+    { "role": "assistant", "content": "지금은 잠긴 용처럼 때가 무르익지 않았으니 준비를 다지며 기다리는 것이 좋습니다." }
+  ],
+  "hexagram": {
+    "primary": { "number": 1, "name": "건", "hanja": "乾", "fullName": "중천건", "keyword": "하늘", "judgment": "원형이정. 크게 형통하니 올바름이 이로우니라.", "image": "하늘의 운행이 건강하니 군자는 스스로 힘써 쉬지 않는다." },
+    "changed": { "number": 44, "name": "구", "hanja": "姤", "fullName": "천풍구", "keyword": "만남", "judgment": "여자가 강하니 여자를 취하지 말라." },
+    "interpretation": {
+      "count": 1,
+      "rule": "본괘 변효의 효사로 판단",
+      "ruleDesc": "변효가 하나이니, 본괘에서 변하는 그 효의 효사로 판단합니다.",
+      "texts": [ { "position": "초구", "text": "잠긴 용이니 쓰지 말라.", "source": "본괘", "isPrimary": true } ]
+    }
+  }
+}

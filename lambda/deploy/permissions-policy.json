@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadLlmKey",
+      "Effect": "Allow",
+      "Action": "ssm:GetParameter",
+      "Resource": "arn:aws:ssm:ap-northeast-2:476364780248:parameter/copilot/jober-chat/production/secrets/LLM_API_KEY"
+    },
+    {
+      "Sid": "DecryptSsm",
+      "Effect": "Allow",
+      "Action": "kms:Decrypt",
+      "Resource": "*"
+    },
+    {
+      "Sid": "RateLimitTable",
+      "Effect": "Allow",
+      "Action": ["dynamodb:UpdateItem"],
+      "Resource": "arn:aws:dynamodb:ap-northeast-2:476364780248:table/iching-ask-rate"
+    }
+  ]
+}

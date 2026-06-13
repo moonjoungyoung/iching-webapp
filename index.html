@@ -52,6 +52,7 @@
     <div class="modal-backdrop"></div>
     <div class="modal-content">
       <button id="modal-close-btn" aria-label="닫기">✕</button>
+      <button id="info-btn" aria-label="점괘 보는 법">卜</button>
       <div class="modal-scroll">
         <div class="result-primary">
           <p class="result-label">현재의 괘</p>
@@ -79,9 +80,62 @@
           </div>
         </div>
 
+        <div id="result-judge" class="hidden">
+          <div class="judge-bridge"><span>占斷 · 점괘 풀이</span></div>
+          <p id="judge-rule" class="judge-rule"></p>
+          <p id="judge-desc" class="judge-desc"></p>
+          <div id="judge-texts" class="judge-texts"></div>
+        </div>
+
+        <div id="result-ask" class="hidden">
+          <div class="ask-bridge"><span>問占 · 점괘에게 묻기</span></div>
+          <div id="ask-thread" class="ask-thread"></div>
+          <div id="ask-examples" class="ask-examples"></div>
+          <div class="ask-input-row">
+            <textarea id="ask-input" rows="2" maxlength="500" placeholder="이 점괘에 대해 궁금한 점을 물어보세요"></textarea>
+            <button id="ask-send-btn" aria-label="보내기">묻기</button>
+          </div>
+        </div>
+
         <div class="modal-footer">
           <button id="share-btn">공유하기</button>
           <button id="new-reading-btn">다시 점치기</button>
+        </div>
+      </div>
+
+      <div id="info-panel" class="hidden">
+        <div class="info-backdrop"></div>
+        <div class="info-card">
+          <button id="info-close-btn" aria-label="닫기">✕</button>
+          <h3 class="info-title">占法 · 점괘 보는 법</h3>
+          <div class="info-body">
+            <div class="info-block">
+              <p class="info-term">본괘(本卦) · 지금</p>
+              <p class="info-desc">동전을 여섯 번 던져 얻은 괘로, 지금 처한 상황의 본 모습입니다.</p>
+            </div>
+            <div class="info-block">
+              <p class="info-term">변효(變爻) · 움직이는 효</p>
+              <p class="info-desc">노양(老陽)·노음(老陰)으로 나온 효입니다. 지금 변화가 일어나는 지점으로, 괘 그림에서 <span class="info-em">금색으로 빛나며 老陽·老陰으로 표시된 줄</span>입니다.</p>
+            </div>
+            <div class="info-block">
+              <p class="info-term">지괘(之卦) · 변화할 괘 · 앞날</p>
+              <p class="info-desc">변효가 모두 뒤집힌 뒤의 괘로, 일이 흘러갈 방향과 결말을 뜻합니다. 변효가 없으면 변화도 없어 지괘가 생기지 않습니다.</p>
+            </div>
+            <div class="info-block">
+              <p class="info-term">점단(占斷) · 무엇을 읽는가</p>
+              <p class="info-desc">변효의 개수에 따라 풀이의 근거가 달라집니다.</p>
+              <ul class="info-rules">
+                <li><b>0개</b> — 본괘의 괘사</li>
+                <li><b>1개</b> — 변하는 그 효의 효사</li>
+                <li><b>2개</b> — 두 변효의 효사 (위 효 위주)</li>
+                <li><b>3개</b> — 본괘·지괘 괘사 (본괘 위주)</li>
+                <li><b>4개</b> — 지괘의 안 변한 효 (아래 효 위주)</li>
+                <li><b>5개</b> — 지괘의 안 변한 효사</li>
+                <li><b>6개</b> — 用九·用六, 또는 지괘 괘사</li>
+              </ul>
+              <p class="info-note">변효가 많아질수록 무게중심이 현재(본괘)에서 앞날(지괘)로 옮겨갑니다.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
