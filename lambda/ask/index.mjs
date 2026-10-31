@@ -213,8 +213,15 @@ function streamOut(responseStream) {
     used: false,
     json(status, obj, origin) {
       out.used = true;
-      const s = awslambda.HttpResponseStream.from(responseStream, { statusCode: status, headers: headersFor(origin, JSON_CT) });
-      if (status !== 204) s.write(JSON.stringify(obj));
+      // RESPONSE_STREAM 모드는 본문을 한 번도 쓰지 않고 끝내면 상태·헤더(prelude)가 나가지 않아
+      // 200 application/octet-stream 이 되고 CORS 헤더가 빠진다(사전 요청 실패). 그래서 본문 없는
+      // 204 대신 200 + "{}" 로 답한다. 브라우저 사전 요청은 2xx 면 통과한다.
+      const noBody = status === 204;
+      const s = awslambda.HttpResponseStream.from(responseStream, {
+        statusCode: noBody ? 200 : status,
+        headers: headersFor(origin, JSON_CT),
+      });
+      s.write(noBody ? '{}' : JSON.stringify(obj));
       s.end();
     },
     open(origin) {

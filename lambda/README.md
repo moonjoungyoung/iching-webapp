@@ -22,7 +22,7 @@
   `{answer}` 200, 거절 200 `{error, refused}`, 빈 max_tokens 200 `{error, truncated}`, 빈 답·위쪽 도중 끊김 502 `{error}`.
   RESPONSE_STREAM 모드에서도 이 JSON 은 `HttpResponseStream.from` 으로 상태·헤더를 지정해 그대로 나간다.
 - 검증 실패와 준비 단계 오류는 모두 **스트림을 열기 전에** 일반 JSON 상태 코드로 답한다:
-  OPTIONS 204(본문 없음), 403 origin, 415, 413, 400, 429 레이트리밋, 500 키 로드 실패, 위쪽 HTTP 오류(과부하 등) 502.
+  OPTIONS 200 `{}`(스트리밍 모드는 본문 없이 끝내면 상태·헤더가 안 나가서 204 대신 200), 403 origin, 415, 413, 400, 429 레이트리밋, 500 키 로드 실패, 위쪽 HTTP 오류(과부하 등) 502.
   CORS 헤더(허용 origin 반향, `vary: origin`)는 모든 응답에 붙는다.
 - `awslambda` 전역이 없는 곳(로컬 실행)에서는 같은 로직을 일반 응답 객체로 돌려준다.
 
@@ -42,7 +42,7 @@
   - 목록에 있으면 그 값을 `access-control-allow-origin` 으로 돌려준다(`vary: origin`).
   - `Origin` 헤더가 없는 요청(서버 간 호출 등)은 예전처럼 처리하고 첫 항목을 돌려준다(레이트리밋은 그대로).
   - Function URL 자체의 CORS 설정은 비워 두어 함수 헤더가 그대로 나가게 한다.
-- 요청 검사: POST 의 `content-type` 이 `application/json` 이 아니면 415, 본문이 16KB 를 넘으면 413, OPTIONS 는 본문 없이 204.
+- 요청 검사: POST 의 `content-type` 이 `application/json` 이 아니면 415, 본문이 16KB 를 넘으면 413, OPTIONS 는 200 `{}`(스트리밍 모드 제약).
 - 요청 본문 필드
   - `question`(필수, 500자 이하. 제어·서식 문자 제거)
   - `reading`: `{ primary: 1~64, changing: [0~5, …] }`. **서버는 이 번호와 변효 자리만 믿고**, 괘사·효사·대상전·점단은
