@@ -86,79 +86,45 @@
     <button id="intro-skip" class="intro-skip" type="button">건너뛰기</button>
   </div>
 
-  <!-- 상단 바: 진행 중 항상 보임 -->
+  <!-- 상단 바: 인장 로고 + 보조 기능 메뉴 하나 -->
   <header id="topbar" class="topbar" hidden>
     <div class="brand">
       <span class="seal seal--xs hanja" aria-hidden="true">周易</span>
       <span class="brand-name">주역 동전점</span>
     </div>
-    <div class="topbar-actions">
-      <button id="sound-btn" class="icon-btn" type="button" aria-pressed="true" aria-label="동전 소리">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path class="i-speaker" d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path class="i-wave" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.6a7.6 7.6 0 0 1 0 10.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path class="i-mute" d="M16 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    <div class="menu-wrap">
+      <button id="menu-btn" class="icon-btn menu-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu" aria-label="메뉴">
+        <span class="trigram" aria-hidden="true"><i></i><i></i><i></i></span>
       </button>
-      <button id="info-open" class="icon-btn icon-btn--text" type="button" aria-haspopup="dialog" aria-controls="info-panel">
-        <span class="hanja" aria-hidden="true">占法</span><span class="sr-only">점괘 보는 법</span>
-      </button>
+      <div id="menu" class="menu" role="menu" aria-labelledby="menu-btn" hidden>
+        <button id="sound-btn" class="menu-item" type="button" role="menuitemcheckbox" aria-checked="true">동전 소리<span class="menu-state" aria-hidden="true"></span></button>
+        <button id="shake-toggle" class="menu-item" type="button" role="menuitemcheckbox" aria-checked="true" hidden>폰 흔들어 던지기<span class="menu-state" aria-hidden="true"></span></button>
+        <button id="menu-manual" class="menu-item" type="button" role="menuitem">효 직접 고르기</button>
+        <button id="info-open" class="menu-item" type="button" role="menuitem" aria-haspopup="dialog" aria-controls="info-panel"><span class="hanja" aria-hidden="true">占法</span> 점괘 보는 법</button>
+      </div>
     </div>
   </header>
 
-  <!-- ② 질문 -->
-  <section id="step-question" class="step" aria-labelledby="q-title" hidden>
-    <div class="step-inner">
-      <span class="seal seal--md hanja" aria-hidden="true">問</span>
-      <h2 id="q-title" class="step-title" tabindex="-1">무엇을 묻고자 하십니까?</h2>
-      <p class="step-lede">한 가지 일을 구체적으로 물을수록 괘가 가리키는 바가 또렷해집니다.</p>
-      <label class="field" for="question-input">
-        <span class="sr-only">물음</span>
-        <textarea id="question-input" maxlength="200" rows="3" aria-describedby="q-count q-privacy" placeholder="올해 이직을 준비해도 될까요?"></textarea>
-        <span class="field-meta"><span id="q-count" aria-live="polite">0 / 200</span></span>
-      </label>
-      <div class="step-actions">
-        <button id="question-start" class="btn btn--primary" type="button" disabled>질문 품고 시작하기</button>
-        <button id="question-skip" class="btn btn--quiet" type="button">건너뛰기</button>
-      </div>
-      <p id="q-privacy" class="step-note">물음은 공유 링크에 담기지 않습니다.</p>
-    </div>
-  </section>
-
-  <!-- ③ 마음 모으기 -->
-  <section id="step-guide" class="step" aria-labelledby="guide-text" hidden>
-    <div class="step-inner step-inner--guide">
-      <div class="breath" aria-hidden="true">
-        <span class="breath-ring"></span>
-        <span class="breath-core"></span>
-        <span class="breath-word breath-in">들이쉬고</span>
-        <span class="breath-word breath-out">내쉬고</span>
-      </div>
-      <p id="guide-question" class="guide-question" hidden></p>
-      <p id="guide-text" class="guide-text" tabindex="-1"></p>
-      <p id="guide-motion" class="guide-motion" hidden>폰을 쥐고 흔들어 동전을 모은 뒤 가볍게 털면 던져집니다. 버튼을 눌러도 됩니다.</p>
-      <p id="guide-permission" class="guide-permission" hidden>[마음을 모았습니다]를 누르면 폰 흔들기 사용 허용을 묻습니다. 허용하면 흔들어 던질 수 있고, 허용하지 않아도 버튼으로 던질 수 있습니다.</p>
-      <button id="guide-ready" class="btn btn--primary" type="button">마음을 모았습니다</button>
-      <button id="guide-manual" class="btn btn--quiet" type="button">동전 없이 효 직접 고르기</button>
-      <p class="step-note">원이 커질 때 들이쉬고 작아질 때 내쉬며, 세 번쯤 숨을 고른 뒤 시작해도 좋습니다.</p>
-    </div>
-  </section>
-
-  <!-- ④ 던지기 HUD -->
+  <!-- 던지기 화면: 인트로 다음의 단 한 장 -->
   <main id="hud" class="hud" hidden>
-    <p id="hud-question" class="hud-question" hidden><span class="hanja" aria-hidden="true">問</span><span class="sr-only">물음:</span><span class="hud-q-text"></span></p>
+    <div class="ask-line">
+      <label for="question-input" class="ask-mark hanja"><span aria-hidden="true">問</span><span class="sr-only">물을 것(선택)</span></label>
+      <textarea id="question-input" class="ask-field" rows="1" maxlength="200" placeholder="물을 것을 적어 두세요 (선택)" aria-describedby="q-privacy"></textarea>
+      <p id="q-privacy" class="sr-only">물음은 공유 링크에 담기지 않습니다.</p>
+    </div>
     <div class="hud-bottom">
+      <div id="coin-toast" class="coin-toast" role="status" aria-live="polite"></div>
+      <p class="throw-guide">질문을 마음에 깊이 품고 여섯 번 던지세요</p>
       <ol id="ladder" class="ladder" aria-label="괘를 세우는 여섯 효"></ol>
       <div class="hud-actions">
-        <div id="coin-toast" class="coin-toast" role="status" aria-live="polite"></div>
-        <button id="throw-btn" class="btn btn--throw" type="button" disabled>
+        <button id="throw-btn" class="btn btn--throw" type="button" disabled aria-describedby="throw-hint">
           <span class="charge" aria-hidden="true"><i id="charge-bar"></i></span>
-          <span id="throw-yao" class="throw-yao hanja">初爻</span><span class="throw-label">동전 던지기</span>
+          <span class="throw-step"><span id="throw-yao" class="throw-yao hanja">初爻</span><span id="throw-count" class="throw-count">1/6</span></span><span class="throw-label">판을 펴는 중</span>
         </button>
         <button id="view-result-btn" class="btn btn--throw btn--ghost" type="button" hidden>괘 다시 보기</button>
-        <p id="throw-hint" class="throw-hint">마음속으로 질문을 되새기며 · 1/6 효</p>
-        <p id="motion-hint" class="motion-hint" hidden>폰을 흔들다 털어 던지세요 · 또는 버튼</p>
+        <p id="throw-hint" class="throw-hint" aria-live="polite"></p>
         <button id="nostage-btn" class="btn btn--line-dark" type="button" hidden>판 없이 던지기</button>
-        <div class="hud-links">
-          <button id="hud-manual" class="hud-link" type="button">효 직접 고르기</button>
-          <button id="shake-toggle" class="hud-link" type="button" aria-pressed="true" hidden>흔들어 던지기</button>
-        </div>
+        <button id="hud-manual" class="hud-link" type="button">효 직접 고르기</button>
       </div>
     </div>
   </main>

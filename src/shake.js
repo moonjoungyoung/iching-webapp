@@ -12,6 +12,8 @@ const MIN_CHARGE = 0.2; //     조금이라도 흔들어 모은 뒤에만 던진
 const COOLDOWN = 1400; //      연속 트리거 방지(ms)
 const TICK_MS = 110;
 
+import { now } from './clock.js';
+
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 /**
@@ -21,7 +23,9 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
  *   onCharge?: (energy:number) => void,
  *   onTick?: (intensity:number) => void,
  *   onFlick?: (opts:{power:number, spin:number, dirX:number}) => void,
+ *   onSample?: (ax:number, ay:number, az:number) => void,
  * }} h
+ *   onSample: 가속도 표본 하나하나(손 안 그릇을 흔드는 데 쓴다). canUse 일 때만 부른다
  */
 export function createShake(h) {
   let attached = false;
@@ -63,6 +67,7 @@ export function createShake(h) {
       return;
     }
     const m = Math.hypot(ax, ay, az);
+    if (h.onSample) h.onSample(ax, ay, az);
 
     // 기운 모으기
     if (m > SHAKE_MIN) energy = clamp01(energy + (m - SHAKE_MIN) * dt * 0.12);
@@ -119,7 +124,7 @@ export function createShake(h) {
       available = true;
       if (h.onAvailable) h.onAvailable();
     }
-    sample(x, y, z, e.timeStamp || performance.now());
+    sample(x, y, z, now());
   }
 
   function attach() {
@@ -132,28 +137,6 @@ export function createShake(h) {
   const needsPermission = typeof window !== 'undefined' && window.DeviceMotionEvent
     && typeof window.DeviceMotionEvent.requestPermission === 'function';
   if (!needsPermission) attach();
-
-  // 개발 모드: M 키를 누르고 있으면 흔들기, 떼면 털기(데스크톱 시험용)
-  if (import.meta.env && import.meta.env.DEV) {
-    let timer = 0, t0 = 0;
-    window.addEventListener('keydown', (e) => {
-      if (e.key !== 'm' || e.repeat || timer || /TEXTAREA|INPUT/.test(document.activeElement?.tagName || '')) return;
-      t0 = performance.now();
-      available || (available = true, h.onAvailable && h.onAvailable());
-      timer = setInterval(() => {
-        const t = performance.now();
-        sample(Math.abs(Math.sin((t - t0) / 1000 * Math.PI * 2 * 4)) * 15, 0, 0, t);
-      }, 16);
-    });
-    window.addEventListener('keyup', (e) => {
-      if (e.key !== 'm' || !timer) return;
-      clearInterval(timer);
-      timer = 0;
-      const t = performance.now();
-      [20, 31, 12, 2].forEach((m, i) => setTimeout(() => sample(m, 0, 0, t + i * 16), i * 16));
-      for (let i = 0; i < 16; i++) setTimeout(() => sample(0.5, 0, 0, performance.now()), 80 + i * 16);
-    });
-  }
 
   return {
     get available() { return available; },

@@ -241,28 +241,56 @@ button:disabled { cursor: default; }
 }
 .intro-skip:hover { color: var(--ink); }
 
-/* 판 위로 걷히기: 가운데부터 둥글게 열린다 */
-@property --reveal { syntax: '<percentage>'; inherits: false; initial-value: 0%; }
+/* 인트로에서 던지기 화면으로: 한 장면으로 이어진다.
+   가운데부터 먹 자국 모양(들쭉날쭉한 가장자리)으로 한지가 걷히고, 같은 길이·같은 ease-out 으로
+   3D 카메라가 위에서 손 앞 시점으로 내려앉는다(stage.playEntrance). 글씨는 살짝 커지며 먹이 마르듯 옅어진다. */
+@property --blot { syntax: '<length>'; inherits: false; initial-value: 0px; }
 .intro.is-leaving {
   pointer-events: none;
-  -webkit-mask-image: radial-gradient(circle at 50% 48%, transparent var(--reveal), #000 calc(var(--reveal) + 22%));
-  mask-image: radial-gradient(circle at 50% 48%, transparent var(--reveal), #000 calc(var(--reveal) + 22%));
-  animation: reveal 0.95s cubic-bezier(0.6, 0, 0.3, 1) forwards;
+  --blot: 0px;
+  -webkit-mask-image: linear-gradient(#000 0 0), url('./assets/ink-mask.svg');
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center, 50% 50%;
+  -webkit-mask-size: 100% 100%, var(--blot) var(--blot);
+  -webkit-mask-composite: xor;
+  mask-image: linear-gradient(#000 0 0), url('./assets/ink-mask.svg');
+  mask-repeat: no-repeat;
+  mask-position: center, 50% 50%;
+  mask-size: 100% 100%, var(--blot) var(--blot);
+  mask-composite: exclude;
+  animation: blot var(--leave, 1200ms) linear forwards;
 }
-.intro.is-leaving.is-fast { animation-duration: 0.45s; }
-@keyframes reveal {
-  70% { opacity: 1; }
-  100% { --reveal: 130%; opacity: 0; }
+/* 먹은 처음에 빠르게 번지고 끝에서 천천히 멈춘다(구간마다 ease-out). 화면이 다 열리는 크기(약 230vmax)에
+   전환 끝 무렵 닿도록 나눠 두고, 마지막 두 할은 한지 자체가 옅어진다 */
+@keyframes blot {
+  0% { --blot: 0px; animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
+  30% { --blot: 70vmax; animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
+  65% { --blot: 160vmax; animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
+  82% { opacity: 1; }
+  100% { --blot: 260vmax; opacity: 0; }
 }
+.intro.is-leaving .intro-stage { animation: recede var(--leave, 1200ms) cubic-bezier(0.33, 1, 0.68, 1) forwards; }
+.intro.is-leaving .intro-caption, .intro.is-leaving .intro-skip { animation: fade-out calc(var(--leave, 1200ms) * 0.4) ease forwards; }
+@keyframes recede { to { transform: translateY(-3vh) scale(1.12); opacity: 0; } }
+.intro.is-leaving.is-fast .intro-stage { animation-name: fade-out; }
 
+/* 동작 줄이기: 마스크·카메라 이동 없이 겹쳐 사라지기만 */
 [data-intro='reduced'] .intro * { animation: none !important; }
 [data-intro='reduced'] .intro-ink { opacity: 0.9; }
 [data-intro='reduced'] .intro-lines .ln { stroke-dashoffset: 0; }
 [data-intro='reduced'] .intro-title { clip-path: none; }
 [data-intro='reduced'] .intro-seal, [data-intro='reduced'] .intro-caption { opacity: 1; transform: rotate(-3deg); }
 [data-intro='reduced'] .intro-caption { transform: none; }
-[data-intro='reduced'] .intro.is-leaving { -webkit-mask-image: none; mask-image: none; animation: fade-out 0.4s ease forwards; }
+[data-intro='reduced'] .intro.is-leaving { -webkit-mask-image: none; mask-image: none; animation: fade-out var(--leave, 300ms) ease forwards; }
 @keyframes fade-out { to { opacity: 0; } }
+
+/* 던지기 화면이 들어오는 박자: 인트로 전환과 같은 길이, 조금 늦게 시작해 먹이 걷히는 뒤를 따라온다 */
+.hud.is-entering .ask-line, .hud.is-entering .hud-bottom, .topbar.is-entering {
+  animation: enter-rise calc(var(--enter, 1200ms) * 0.6) cubic-bezier(0.33, 1, 0.68, 1) calc(var(--enter, 1200ms) * 0.4) both;
+}
+@keyframes enter-rise { from { opacity: 0; transform: translateY(10px); } }
+.hud.is-fading-in, .topbar.is-fading-in { animation: fade-in-from var(--enter, 300ms) ease both; }
+@keyframes fade-in-from { from { opacity: 0; } }
 
 /* =========================================================
    상단 바
@@ -282,8 +310,6 @@ button:disabled { cursor: default; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-name { font-size: var(--t-sm); letter-spacing: 0.18em; color: var(--mist); }
 
-.topbar-actions { display: flex; gap: 2px; }
-
 .icon-btn {
   min-width: 44px;
   min-height: 44px;
@@ -295,83 +321,50 @@ button:disabled { cursor: default; }
   transition: color 0.2s;
 }
 .icon-btn:hover { color: var(--gold-2); }
-.icon-btn--text { padding: 0 10px; font-size: 1.0625rem; letter-spacing: 0.06em; }
 .icon-btn--ink { color: var(--ink-2); }
 .icon-btn--ink:hover { color: var(--ink); }
 
-#sound-btn .i-mute { display: none; }
-#sound-btn[aria-pressed='false'] .i-wave { display: none; }
-#sound-btn[aria-pressed='false'] .i-mute { display: inline; }
-
-/* =========================================================
-   ② 질문 · ③ 마음 모으기
-   ========================================================= */
-.step {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  overflow-y: auto;
-  background:
-    linear-gradient(180deg, rgba(18, 13, 10, 0.9) 0%, rgba(18, 13, 10, 0.7) 50%, rgba(18, 13, 10, 0.92) 100%);
-  -webkit-backdrop-filter: blur(5px);
-  backdrop-filter: blur(5px);
-  animation: step-in 0.6s var(--ease-out) both;
-}
-.step.is-leaving { animation: step-out 0.35s ease forwards; }
-@keyframes step-in { from { opacity: 0; } }
-@keyframes step-out { to { opacity: 0; } }
-
-.step-inner {
-  min-height: 100%;
-  width: min(100%, 36rem);
-  margin: 0 auto;
+/* 메뉴: 삼효(☰) 모양 단추 하나에 소리·흔들기·직접 고르기·점법 안내를 모은다 */
+.menu-wrap { position: relative; }
+.trigram { display: flex; flex-direction: column; gap: 4px; width: 20px; }
+.trigram i { display: block; height: 2px; background: currentColor; border-radius: 1px; }
+.trigram i:nth-child(2) { background: linear-gradient(90deg, currentColor 0 42%, transparent 42% 58%, currentColor 58%); }
+.menu-btn[aria-expanded='true'] { color: var(--gold-2); }
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 220px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: calc(84px + var(--safe-t)) calc(24px + var(--safe-r)) calc(28px + var(--safe-b)) calc(24px + var(--safe-l));
+  background: var(--lacquer-2);
+  box-shadow: inset 0 0 0 1px var(--hair-dark), 0 20px 40px -18px rgba(0, 0, 0, 0.9);
+  border-radius: 3px;
+  animation: menu-in 0.18s var(--ease-out) both;
 }
-
-.step-inner > .seal--md { margin-bottom: 26px; transform: rotate(-3deg); }
-
-.step-title {
-  font-size: var(--t-2xl);
-  font-weight: 300;
-  line-height: 1.3;
-  letter-spacing: -0.01em;
-  color: var(--hanji);
-  outline: none;
-}
-
-.step-lede {
-  margin-top: 12px;
-  max-width: 26em;
+.menu[hidden] { display: none; }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px); } }
+.menu-item {
+  min-height: 44px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
   font-size: 0.9375rem;
-  line-height: 1.75;
-  color: var(--mist);
-}
-
-.field { display: block; margin-top: 28px; }
-#question-input {
-  display: block;
-  width: 100%;
-  min-height: 7.6em;
-  resize: none;
-  padding: 16px 16px 14px;
-  border: 0;
+  color: var(--hanji);
   border-radius: 2px;
-  background: var(--grain) 0 0 / 384px 384px, var(--hanji);
-  color: var(--ink);
-  font-size: 1.0625rem;
-  line-height: 1.75;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 18px 40px -24px rgba(0, 0, 0, 0.9);
-  -webkit-appearance: none;
 }
-#question-input::placeholder { color: var(--ink-3); }
-#question-input:focus { outline: none; box-shadow: 0 0 0 2px var(--gold-2), 0 18px 40px -24px rgba(0, 0, 0, 0.9); }
-.field-meta { display: flex; justify-content: flex-end; margin-top: 8px; font-size: var(--t-xs); color: var(--mist-2); font-variant-numeric: tabular-nums; }
+.menu-item[hidden] { display: none; }
+.menu-item:hover, .menu-item:focus-visible { background: var(--lacquer-3); outline: none; }
+.menu-item .hanja { color: var(--gold); margin-right: 6px; }
+#info-open { justify-content: flex-start; gap: 0; }
+.menu-state { font-size: var(--t-xs); color: var(--mist); }
+.menu-item[aria-checked='true'] .menu-state { color: var(--gold-2); }
 
-.step-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 26px; }
-.step-note { margin-top: 18px; font-size: var(--t-xs); line-height: 1.7; color: var(--mist-2); }
+
 
 /* 버튼 */
 .btn {
@@ -403,82 +396,59 @@ button:disabled { cursor: default; }
 .btn--line { color: var(--ink); box-shadow: inset 0 0 0 1px rgba(26, 20, 16, 0.35); }
 .btn--line:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 
-/* 마음 모으기 */
-.step-inner--guide { align-items: center; text-align: center; }
-
-.breath { position: relative; width: 168px; height: 168px; margin-bottom: 34px; display: grid; place-items: center; }
-.breath-ring, .breath-core { position: absolute; inset: 0; border-radius: 50%; }
-.breath-ring { border: 1px solid var(--gold); animation: breathe 6s ease-in-out infinite; }
-.breath-core {
-  inset: 22%;
-  background: radial-gradient(circle, rgba(201, 166, 94, 0.22), rgba(201, 166, 94, 0) 70%);
-  animation: breathe 6s ease-in-out infinite;
-}
-@keyframes breathe { 0%, 100% { transform: scale(0.6); } 50% { transform: scale(1); } }
-.breath-word {
-  position: absolute;
-  font-size: var(--t-sm);
-  letter-spacing: 0.3em;
-  color: var(--gold-2);
-  animation: word-in 6s ease-in-out infinite;
-}
-.breath-out { animation-name: word-out; }
-@keyframes word-in { 0%, 42% { opacity: 1; } 50%, 92% { opacity: 0; } 100% { opacity: 1; } }
-@keyframes word-out { 0%, 42% { opacity: 0; } 50%, 92% { opacity: 1; } 100% { opacity: 0; } }
-
-.guide-question {
-  max-width: 22em;
-  margin-bottom: 14px;
-  font-size: 0.9375rem;
-  line-height: 1.7;
-  color: var(--gold-2);
-}
-.guide-text {
-  max-width: 21em;
-  font-size: var(--t-lg);
-  font-weight: 300;
-  line-height: 1.85;
-  color: var(--hanji);
-  word-break: keep-all;
-  outline: none;
-}
-.guide-motion { max-width: 22em; margin-top: 14px; font-size: 0.9375rem; line-height: 1.75; color: var(--gold-2); word-break: keep-all; }
-.step-inner--guide .btn { margin-top: 30px; min-width: 220px; }
-.step-inner--guide .step-note { max-width: 22em; }
 
 /* =========================================================
    ④ 던지기 HUD
    ========================================================= */
 .hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
 
-.hud-question {
+/* 물을 것(선택): 위쪽 한 줄. 누르면 늘어난다 */
+.ask-line {
   position: absolute;
-  top: calc(64px + var(--safe-t));
+  top: calc(62px + var(--safe-t));
   left: calc(16px + var(--safe-l));
   right: calc(16px + var(--safe-r));
   display: flex;
+  align-items: flex-start;
   gap: 10px;
-  align-items: baseline;
-  font-size: var(--t-sm);
-  color: var(--mist);
+  pointer-events: auto;
 }
-.hud-question .hanja { color: var(--gold); font-size: 1rem; }
-.hud-q-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ask-mark { flex: 0 0 auto; padding-top: 9px; font-size: 1.0625rem; line-height: 1; color: var(--gold); }
+.ask-field {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  max-height: 96px;
+  padding: 7px 2px 8px;
+  resize: none;
+  overflow-y: auto;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  color: var(--hanji);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(201, 166, 94, 0.22);
+  border-radius: 0;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+.ask-field::placeholder { color: var(--mist-2); }
+.ask-field:focus { outline: none; border-bottom-color: var(--gold); background: rgba(18, 13, 10, 0.55); }
 
 .hud-bottom {
   position: absolute;
   left: 0; right: 0; bottom: 0;
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 20px;
+  grid-template-areas: 'toast toast' 'guide guide' 'ladder actions';
+  gap: 12px 14px;
   align-items: end;
   padding: 56px calc(16px + var(--safe-r)) calc(16px + var(--safe-b)) calc(14px + var(--safe-l));
   background: linear-gradient(0deg, rgba(18, 13, 10, 0.94) 0%, rgba(18, 13, 10, 0.72) 55%, rgba(18, 13, 10, 0) 100%);
 }
 
 /* 효 사다리: 아래(初爻)부터 쌓인다 */
-.ladder { list-style: none; display: flex; flex-direction: column-reverse; gap: 7px; padding-bottom: 4px; }
-.ladder li { display: grid; grid-template-columns: 28px 64px 12px; align-items: center; gap: 8px; height: 13px; }
+.ladder { grid-area: ladder; list-style: none; display: flex; flex-direction: column-reverse; gap: 7px; padding-bottom: 50px; }
+.ladder li { display: grid; grid-template-columns: 22px 44px 10px; align-items: center; gap: 6px; height: 12px; }
 .yao-name { font-size: 11px; line-height: 1; color: var(--mist-2); text-align: right; transition: color 0.3s; }
 .yao-bar { position: relative; height: 6px; display: flex; justify-content: space-between; }
 .yao-bar::before {
@@ -499,9 +469,9 @@ button:disabled { cursor: default; }
 .ladder .changing .seg { background: var(--seal-2); }
 @keyframes seg-in { from { transform: scaleX(0); } }
 
-.hud-actions { display: flex; flex-direction: column; gap: 10px; min-width: 0; pointer-events: auto; }
+.hud-actions { grid-area: actions; display: flex; flex-direction: column; gap: 6px; min-width: 0; pointer-events: auto; }
 
-.coin-toast { min-height: 34px; display: flex; align-items: center; gap: 10px; }
+.coin-toast { grid-area: toast; justify-self: center; min-height: 34px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
 .coin-toast:empty { visibility: hidden; }
 .coin-toast .toast-inner { display: flex; align-items: center; gap: 10px; animation: toast-in 0.45s var(--ease-out) both; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } }
@@ -539,7 +509,16 @@ button:disabled { cursor: default; }
 .btn--ghost { background: transparent; }
 
 .throw-hint { text-align: center; font-size: var(--t-xs); letter-spacing: 0.04em; color: var(--mist); }
-.motion-hint { margin-top: -6px; text-align: center; font-size: var(--t-xs); letter-spacing: 0.04em; color: var(--gold-2); }
+.throw-guide { grid-area: guide; text-align: center; font-size: 0.875rem; line-height: 1.5; letter-spacing: 0.02em; color: var(--hanji-2); word-break: keep-all; }
+.btn--throw { gap: 12px; padding: 0 14px; white-space: nowrap; }
+.throw-step { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 0 0 auto; line-height: 1; }
+.btn--throw .throw-yao { font-size: 1rem; }
+.btn--throw .throw-count { font-size: 11px; color: var(--mist); font-variant-numeric: tabular-nums; letter-spacing: 0.06em; }
+.btn--throw .throw-label { font-size: 0.9375rem; }
+.btn--throw.is-holding { background: linear-gradient(180deg, #2c2118, #1c1510); box-shadow: inset 0 0 0 1px var(--gold), inset 0 0 0 4px #17110d, inset 0 0 0 5px rgba(201, 166, 94, 0.4); }
+.btn--throw.is-holding .throw-label { color: var(--gold-2); }
+.throw-hint:empty { display: none; }
+.hud-link[hidden] { display: none; }
 
 /* =========================================================
    ⑤ 결과: 한지 두루마리
@@ -767,23 +746,24 @@ button:disabled { cursor: default; }
    넓은 화면
    ========================================================= */
 @media (min-width: 900px) {
+  /* 넓은 화면: 판과 손이 가운데 세로로 놓이므로 던지기 자리는 오른쪽 아래에 둔다 */
   .hud-bottom {
-    left: 50%;
-    right: auto;
-    width: 560px;
-    transform: translateX(-50%);
+    left: auto;
+    right: calc(28px + var(--safe-r));
+    width: 460px;
     background: none;
-    padding-bottom: 32px;
+    padding: 0 0 32px;
   }
-  .hud { background: linear-gradient(0deg, rgba(18, 13, 10, 0.85), rgba(18, 13, 10, 0) 30%); }
-  .hud-question { left: 50%; right: auto; width: min(640px, 80vw); transform: translateX(-50%); justify-content: center; top: 24px; }
+  .hud { background: radial-gradient(60% 55% at 100% 100%, rgba(18, 13, 10, 0.9), rgba(18, 13, 10, 0) 100%); }
+  .ask-line { left: 50%; right: auto; width: min(560px, 80vw); transform: translateX(-50%); top: 28px; }
   .topbar { padding: 18px 24px; }
   .ladder li { grid-template-columns: 32px 76px 14px; height: 15px; }
+  .ladder { padding-bottom: 54px; }
+  .btn--throw .throw-label { font-size: 1rem; }
   .yao-name, .yao-mark { font-size: 13px; }
   .coin-dot { width: 30px; height: 30px; font-size: 14px; }
-  .throw-hint, .motion-hint { font-size: var(--t-sm); }
+  .throw-hint { font-size: var(--t-sm); }
 
-  .step-title { font-size: var(--t-3xl); }
 
   .sheet {
     left: 50%;
@@ -813,15 +793,11 @@ button:disabled { cursor: default; }
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  .breath-ring, .breath-core { transform: scale(0.85); }
-  .breath-out { opacity: 0; }
 }
 
 /* =========================================================
    리뷰 반영: 안내·던지기 보조 동작, 직접 고르기
    ========================================================= */
-.guide-permission { max-width: 22em; margin-top: 12px; font-size: var(--t-sm); line-height: 1.7; color: var(--mist); word-break: keep-all; }
-.step-inner--guide .btn--quiet { margin-top: 8px; min-width: 220px; }
 
 .btn--line-dark { min-height: 44px; color: var(--hanji); box-shadow: inset 0 0 0 1px rgba(236, 228, 210, 0.4); font-weight: 400; }
 .btn--line-dark:hover { box-shadow: inset 0 0 0 1px var(--hanji); }

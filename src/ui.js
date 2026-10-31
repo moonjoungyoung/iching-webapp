@@ -18,46 +18,28 @@ const ASK_EXAMPLES = [
   '변효가 가리키는 변화는 어떤 의미인가요?',
   '한 문장으로 요약해 주세요.',
 ];
-const QUESTION_HINTS = [
-  '올해 이직을 준비해도 될까요?',
-  '그 사람과의 관계는 어떻게 흘러갈까요?',
-  '지금 시작하려는 일에서 무엇을 조심해야 할까요?',
-  '이번 결정을 미뤄도 괜찮을까요?',
-];
 
 const els = {
   topbar: $('#topbar'),
+  menuBtn: $('#menu-btn'),
+  menu: $('#menu'),
   soundBtn: $('#sound-btn'),
+  shakeToggle: $('#shake-toggle'),
+  menuManual: $('#menu-manual'),
   infoOpen: $('#info-open'),
-  stepQuestion: $('#step-question'),
-  qTitle: $('#q-title'),
   qInput: $('#question-input'),
-  qCount: $('#q-count'),
-  qStart: $('#question-start'),
-  qSkip: $('#question-skip'),
-  stepGuide: $('#step-guide'),
-  guideQuestion: $('#guide-question'),
-  guideText: $('#guide-text'),
-  guideReady: $('#guide-ready'),
   hud: $('#hud'),
-  hudQuestion: $('#hud-question'),
-  hudQText: $('#hud-question .hud-q-text'),
   ladder: $('#ladder'),
   toast: $('#coin-toast'),
   throwBtn: $('#throw-btn'),
   throwYao: $('#throw-yao'),
   throwLabel: $('#throw-btn .throw-label'),
+  throwCount: $('#throw-count'),
   throwHint: $('#throw-hint'),
-  motionHint: $('#motion-hint'),
   chargeBar: $('#charge-bar'),
-  guideMotion: $('#guide-motion'),
-  guidePermission: $('#guide-permission'),
-  guideManual: $('#guide-manual'),
   hudManual: $('#hud-manual'),
-  shakeToggle: $('#shake-toggle'),
   noStageBtn: $('#nostage-btn'),
   resultSource: $('#result-source'),
-  stepQuestionEl: $('#step-question'),
   manualPanel: $('#manual-panel'),
   viewResultBtn: $('#view-result-btn'),
   resultModal: $('#result-modal'),
@@ -108,19 +90,41 @@ let askGen = 0; // 점괘(결과)마다 올라가는 세대 번호: 지난 점�
 let askCtrl = null; // 진행 중인 묻기 요청(새 점괘로 바뀌면 취소)
 let askBusy = false;
 let lastResult = null; // { primary, changed, lines, interpretation, manual? }
-let intent = ''; // 점치기 전 품은 물음
+let intent = ''; // 점치기 전 품은 물음(결과를 만들 때 질문 칸에서 읽는다)
 let infoReturnFocus = null;
 let motionOn = false; // 폰 흔들기 감지가 실제로 들어오는 기기
-let motionPermissionNeeded = false; // iOS: 안내 단계 버튼에서 권한을 물어야 한다
 let shakeEnabled = true;
 try { shakeEnabled = localStorage.getItem('iching.shake') !== '0'; } catch (e) { /* 저장소 차단 */ }
+let lastThrowState = null;
 
-/* ---------------- 상단 바 · 소리 ---------------- */
+/* ---------------- 상단 바 · 메뉴 ---------------- */
 
 export function showTopbar() { els.topbar.hidden = false; }
 
-function syncSoundBtn() {
-  els.soundBtn.setAttribute('aria-pressed', String(!isMuted()));
+function syncMenuState() {
+  els.soundBtn.setAttribute('aria-checked', String(!isMuted()));
+  els.soundBtn.querySelector('.menu-state').textContent = isMuted() ? '꺼짐' : '켜짐';
+  els.shakeToggle.hidden = !motionOn;
+  els.shakeToggle.setAttribute('aria-checked', String(shakeEnabled));
+  els.shakeToggle.querySelector('.menu-state').textContent = shakeEnabled ? '켜짐' : '꺼짐';
+}
+
+function menuItems() {
+  return [...els.menu.querySelectorAll('.menu-item')].filter((b) => !b.hidden);
+}
+
+function openMenu() {
+  syncMenuState();
+  els.menu.hidden = false;
+  els.menuBtn.setAttribute('aria-expanded', 'true');
+  requestAnimationFrame(() => { const f = menuItems()[0]; if (f) f.focus({ preventScroll: true }); });
+}
+
+function closeMenu(restore = true) {
+  if (els.menu.hidden) return;
+  els.menu.hidden = true;
+  els.menuBtn.setAttribute('aria-expanded', 'false');
+  if (restore) els.menuBtn.focus({ preventScroll: true });
 }
 
 /* ---------------- 겹쳐 뜨는 창과 배경 잠금(inert) ---------------- */
@@ -128,7 +132,7 @@ function syncSoundBtn() {
 const isOpen = (el) => el && !el.hidden;
 
 /**
- * 맨 위에 뜬 창 아래는 모두 inert: 안내창 > 직접 고르기 > 결과 > 바탕(상단 바·던지기 화면·단계)
+ * 맨 위에 뜬 창 아래는 모두 inert: 안내창 > 직접 고르기 > 결과 > 바탕(상단 바·던지기 화면)
  * 열고 닫을 때마다 부른다.
  */
 export function syncInert() {
@@ -136,110 +140,47 @@ export function syncInert() {
   const manual = isOpen(els.manualPanel);
   const sheet = isOpen(els.resultModal);
   const setInert = (el, on) => { if (!el) return; if (on) el.setAttribute('inert', ''); else el.removeAttribute('inert'); };
-  [els.topbar, els.hud, els.stepQuestion, els.stepGuide].forEach((el) => setInert(el, info || manual || sheet));
+  [els.topbar, els.hud].forEach((el) => setInert(el, info || manual || sheet));
   setInert(els.resultModal, info || manual);
   setInert(els.manualPanel, info);
 }
 
 /** 어떤 창이든 떠 있으면 true(던지기·자동 초점 보류) */
 export function anyOverlayOpen() {
-  return isOpen(els.infoPanel) || isOpen(els.manualPanel) || isOpen(els.resultModal);
-}
-
-/* ---------------- 단계 전환 ---------------- */
-
-function hideStep(step) {
-  if (step.hidden) return;
-  if (reduceMotion()) { step.hidden = true; return; }
-  step.classList.add('is-leaving');
-  setTimeout(() => { step.hidden = true; step.classList.remove('is-leaving'); }, 340);
-}
-
-/** ② 질문 단계 */
-export function showQuestionStep(prefill = '') {
-  els.hud.hidden = true;
-  els.stepGuide.hidden = true;
-  els.stepQuestion.hidden = false;
-  els.qInput.value = prefill;
-  updateQuestionCount();
-  if (!prefill) els.qInput.placeholder = QUESTION_HINTS[Math.floor(Math.random() * QUESTION_HINTS.length)];
-  // 터치 기기에서는 키보드가 바로 올라오지 않도록 제목에 초점
-  requestAnimationFrame(() => (finePointer() ? els.qInput : els.qTitle).focus({ preventScroll: true }));
-}
-
-function updateQuestionCount() {
-  const n = els.qInput.value.length;
-  els.qCount.textContent = `${n} / 200`;
-  els.qStart.disabled = els.qInput.value.trim().length === 0;
-}
-
-/** ③ 마음 모으기 */
-export function showGuideStep(question) {
-  hideStep(els.stepQuestion);
-  els.hud.hidden = true;
-  els.stepGuide.hidden = false;
-  if (question) {
-    els.guideQuestion.hidden = false;
-    els.guideQuestion.textContent = `「${question}」`;
-    els.guideText.textContent = '질문을 마음에 깊이 품고, 한 번 던질 때마다 그 생각에 머무르며 동전을 여섯 번 던지십시오.';
-  } else {
-    els.guideQuestion.hidden = true;
-    els.guideText.textContent = '묻고자 하는 일을 마음에 깊이 품고, 한 번 던질 때마다 그 일에 머무르며 동전을 여섯 번 던지십시오.';
-  }
-  syncGuideMotion();
-  syncInert();
-  requestAnimationFrame(() => els.guideText.focus({ preventScroll: true }));
-}
-
-function syncGuideMotion() {
-  els.guideMotion.hidden = !(motionOn || motionPermissionNeeded) || !shakeEnabled;
-  els.guidePermission.hidden = !(motionPermissionNeeded && !motionOn) || !shakeEnabled;
-}
-
-/** iOS 처럼 동작 권한을 따로 물어야 하는 기기 */
-export function setMotionPermissionNeeded(on) {
-  motionPermissionNeeded = !!on;
-  syncGuideMotion();
+  return isOpen(els.infoPanel) || isOpen(els.manualPanel) || isOpen(els.resultModal) || isOpen(els.menu);
 }
 
 export function isShakeEnabled() { return shakeEnabled; }
+export function isInfoOpen() { return !els.infoPanel.hidden; }
 
-/** 흔들기 감지가 들어오기 시작하면 안내 문구를 바꾼다 */
+/** 흔들기 감지가 들어오기 시작하면 주 버튼 이름을 '흔들어 던지기'로 */
 export function setMotionAvailable(on) {
   motionOn = !!on;
-  syncGuideMotion();
-  syncShakeUi();
-}
-
-function syncShakeUi() {
-  els.shakeToggle.hidden = !motionOn;
-  els.shakeToggle.setAttribute('aria-pressed', String(shakeEnabled));
-  els.shakeToggle.textContent = shakeEnabled ? '흔들어 던지기 끄기' : '흔들어 던지기 켜기';
-  els.motionHint.hidden = !motionOn || !shakeEnabled || els.throwBtn.hidden;
+  syncMenuState();
+  if (lastThrowState) setThrowState(lastThrowState);
 }
 
 /** 흔들어 모은 기운(0~1)을 던지기 버튼 윗선에 보여 준다 */
 export function setCharge(energy) {
   const e = Math.max(0, Math.min(1, energy));
   els.chargeBar.style.transform = `scaleX(${e})`;
-  const charging = e > 0.04;
-  els.throwBtn.classList.toggle('is-charging', charging);
-  if (charging && !els.throwBtn.disabled) els.throwLabel.textContent = '흔드는 중';
-  else if (!els.throwBtn.disabled && els.throwLabel.textContent === '흔드는 중') els.throwLabel.textContent = '동전 던지기';
+  els.throwBtn.classList.toggle('is-charging', e > 0.04);
 }
 
-export function isInfoOpen() { return !els.infoPanel.hidden; }
-
-/** ④ 던지기 화면 */
-export function showHud(question) {
-  hideStep(els.stepGuide);
-  hideStep(els.stepQuestion);
+/** 던지기 화면(인트로 바로 다음의 한 장) */
+export function showHud() {
   els.hud.hidden = false;
   syncInert();
-  intent = question || '';
-  els.hudQuestion.hidden = !intent;
-  els.hudQText.textContent = intent;
-  els.hudQuestion.title = intent;
+}
+
+/** 질문 칸(선택). 결과·問占 맥락(intent)으로 이어진다 */
+export function getQuestion() { return els.qInput.value.trim().slice(0, 200); }
+export function setQuestion(v) { els.qInput.value = v || ''; autoGrow(); }
+
+function autoGrow() {
+  const t = els.qInput;
+  t.style.height = 'auto';
+  t.style.height = `${Math.min(t.scrollHeight, 96)}px`;
 }
 
 /* ---------------- 효 사다리 ---------------- */
@@ -282,18 +223,20 @@ export function updateLadder(lines) {
   }
 }
 
-/* ---------------- 던지기 버튼 · 안내 ---------------- */
+/* ---------------- 주 동작(던지기 버튼) ---------------- */
 
 /**
- * @param {{ index:number, loading?:boolean, rolling?:boolean, done?:boolean, noStage?:boolean }} s
+ * @param {{ index:number, loading?:boolean, rolling?:boolean, holding?:boolean, done?:boolean,
+ *           noStage?:boolean, offerNoStage?:boolean, manual?:boolean, retry?:boolean }} s
  */
 export function setThrowState(s) {
+  lastThrowState = s;
   const i = Math.min(s.index, 5);
   els.throwYao.textContent = YAO_NAMES[i];
+  els.throwCount.textContent = `${i + 1}/6`;
   if (s.done) {
     els.throwBtn.hidden = true;
     els.viewResultBtn.hidden = false;
-    els.motionHint.hidden = true;
     els.noStageBtn.hidden = true;
     els.hudManual.hidden = true;
     els.throwHint.textContent = s.manual ? '직접 고른 여섯 효로 괘를 세웠습니다' : '여섯 효가 모두 섰습니다';
@@ -304,22 +247,31 @@ export function setThrowState(s) {
   els.hudManual.hidden = false;
   // 물리 판이 오래 늦으면 공정한 난수로 '판 없이 던지기'를 함께 내민다
   els.noStageBtn.hidden = !s.offerNoStage || !!s.rolling;
-  syncShakeUi();
   els.throwBtn.disabled = !!(s.loading || s.rolling);
   els.throwBtn.setAttribute('aria-busy', s.loading ? 'true' : 'false');
-  els.throwLabel.textContent = s.loading ? '판을 펴는 중' : s.rolling ? '동전이 구르는 중' : '동전 던지기';
-  const lead = intent ? '마음속으로 질문을 되새기며' : '마음속으로 그 일을 되새기며';
-  els.throwHint.textContent = s.noStage
-    ? `3D 판을 열 수 없어 판 없이 던집니다 · ${i + 1}/6 효`
-    : `${lead} · ${i + 1}/6 효`;
+  els.throwBtn.classList.toggle('is-holding', !!s.holding);
+  let label;
+  if (s.loading) label = '판을 펴는 중';
+  else if (s.rolling) label = '동전이 구르는 중';
+  else if (s.holding) label = '놓으면 던져집니다';
+  else if (s.noStage) label = '동전 던지기';
+  else if (motionOn && shakeEnabled) label = '흔들어 던지기';
+  else label = finePointer() ? '눌러서 흔들고, 놓아 던지기' : '눌러 흔들고 놓아 던지기';
+  els.throwLabel.textContent = label;
+  // 아래 작은 줄은 꼭 필요할 때만(판 없이 던지는 중, 다시 던지기)
+  if (s.retry) els.throwHint.textContent = '동전이 자리를 잡지 못했습니다. 이 효를 다시 던져 주세요.';
+  else if (s.noStage) els.throwHint.textContent = '3D 판을 열 수 없어 판 없이 던집니다';
+  else els.throwHint.textContent = '';
 }
 
 export function focusThrow() {
   if (anyOverlayOpen()) return; // 창이 떠 있으면 배경 버튼에 초점을 옮기지 않는다
+  if (document.activeElement === els.qInput) return;
   if (!els.throwBtn.hidden && !els.throwBtn.disabled) els.throwBtn.focus({ preventScroll: true });
 }
 
 export function focusViewResult() {
+
   if (anyOverlayOpen()) return;
   if (!els.viewResultBtn.hidden) els.viewResultBtn.focus({ preventScroll: true });
 }
@@ -347,7 +299,7 @@ export function clearCoinToast() { els.toast.innerHTML = ''; }
 
 /** 동전이 제한 시간 안에 자리를 잡지 못했을 때: 이 효는 기록하지 않고 다시 던진다 */
 export function showRetryToast() {
-  els.toast.innerHTML = '<div class="toast-inner"><span class="toast-retry">동전이 자리를 잡지 못했습니다. 이 효를 다시 던져 주세요.</span></div>';
+  els.toast.innerHTML = '<div class="toast-inner"><span class="toast-retry">동전이 자리를 잡지 못했습니다. 다시 던져 주세요.</span></div>';
 }
 
 export function resetHud() {
@@ -388,6 +340,7 @@ export function prepareResult(r) {
   if (r === lastResult) return;
   lastResult = r;
   newAskGeneration();
+  intent = r.fromLink ? '' : getQuestion();
   const { primary, changed, lines, interpretation } = r;
   els.resultSource.hidden = !r.manual;
 
@@ -804,35 +757,47 @@ function trapTab(container, e) {
  */
 export function initUI(h) {
   buildLadder();
-  syncSoundBtn();
+  syncMenuState();
 
-  els.soundBtn.addEventListener('click', () => { setMuted(!isMuted()); syncSoundBtn(); });
-
-  els.qInput.addEventListener('input', updateQuestionCount);
-  els.qInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !els.qStart.disabled) { e.preventDefault(); els.qStart.click(); }
+  // 메뉴(소리·흔들기·직접 고르기·점법 안내)
+  els.menuBtn.addEventListener('click', () => (els.menu.hidden ? openMenu() : closeMenu()));
+  els.menu.addEventListener('keydown', (e) => {
+    const items = menuItems();
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeMenu(); }
+    else if (e.key === 'Tab') closeMenu(false);
   });
-  els.qStart.addEventListener('click', () => h.onQuestionStart(els.qInput.value.trim().slice(0, 200)));
-  els.qSkip.addEventListener('click', () => h.onQuestionSkip());
-  els.guideReady.addEventListener('click', () => h.onGuideReady());
-  els.guideManual.addEventListener('click', () => h.onManual());
-  els.hudManual.addEventListener('click', () => h.onManual());
-  els.noStageBtn.addEventListener('click', () => h.onThrowNoStage());
+  document.addEventListener('pointerdown', (e) => {
+    if (!els.menu.hidden && !els.menu.contains(e.target) && !els.menuBtn.contains(e.target)) closeMenu(false);
+  });
+  els.soundBtn.addEventListener('click', () => { setMuted(!isMuted()); syncMenuState(); });
   els.shakeToggle.addEventListener('click', () => {
     shakeEnabled = !shakeEnabled;
     try { localStorage.setItem('iching.shake', shakeEnabled ? '1' : '0'); } catch (e) { /* 저장소 차단 */ }
-    syncShakeUi();
-    syncGuideMotion();
+    syncMenuState();
+    if (lastThrowState) setThrowState(lastThrowState);
+  });
+  els.menuManual.addEventListener('click', () => { closeMenu(false); h.onManual(); });
+  els.infoOpen.addEventListener('click', () => { closeMenu(false); openInfo(); });
+
+  // 질문 칸: 한 줄, 쓰면 늘어난다. Enter 는 줄바꿈 대신 칸을 닫는다
+  els.qInput.addEventListener('input', autoGrow);
+  els.qInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); els.qInput.blur(); }
   });
 
-  els.throwBtn.addEventListener('click', () => h.onThrow());
+  els.hudManual.addEventListener('click', () => h.onManual());
+  els.noStageBtn.addEventListener('click', () => h.onThrowNoStage());
   els.viewResultBtn.addEventListener('click', () => h.onViewResult());
   els.newReadingBtn.addEventListener('click', () => h.onNewReading());
   els.shareBtn.addEventListener('click', shareResult);
   els.modalCloseBtn.addEventListener('click', closeResult);
   els.resultModal.querySelector('.sheet-backdrop').addEventListener('click', closeResult);
 
-  els.infoOpen.addEventListener('click', openInfo);
   els.infoBtn.addEventListener('click', openInfo);
   els.infoCloseBtn.addEventListener('click', closeInfo);
   els.infoPanel.querySelector('.info-backdrop').addEventListener('click', closeInfo);

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createTrayFloorTexture, createTableTexture } from './textures.js';
 import { PHYS } from './physics-core.js';
@@ -24,21 +23,25 @@ export function detectQuality() {
 }
 
 /**
- * 화면 비율에 맞춰 카메라 거리·시야를 정한다.
- * 세로 화면은 하단 조작부가 크므로 판을 화면 위쪽으로 조금 올린다.
+ * 화면 비율에 맞춘 카메라 구도.
+ * 판 앞쪽 위의 손(그릇)에서 판 가운데로 이어지는 궤적이 한 화면에 들어오도록 앞쪽 비스듬한 위에서 본다.
+ * 세로 화면에서는 동전 지름이 화면 폭의 약 14% 가 되도록 보이는 폭(halfW)을 정한다.
  */
 export function computeView(w, h) {
   const aspect = w / h;
   const portrait = aspect < 1;
-  const fov = portrait ? 44 : 36;
+  const fov = portrait ? 40 : 34;
   const halfFov = THREE.MathUtils.degToRad(fov / 2);
-  const needHalfW = portrait ? 2.62 : 3.2;
-  const needHalfH = portrait ? 3.4 : 3.75;
-  const dW = needHalfW / (Math.tan(halfFov) * aspect);
-  const dH = needHalfH / Math.tan(halfFov);
+  // 보이는 반폭·반높이(목표점 거리에서, 단위). 동전 지름 1 단위 / (2 × halfW) = 화면 폭 대비 동전 크기
+  const halfW = portrait ? 3.55 : 4.6;
+  const halfH = portrait ? 4.2 : 5.6;
+  const dW = halfW / (Math.tan(halfFov) * aspect);
+  const dH = halfH / Math.tan(halfFov);
   const dist = Math.max(dW, dH);
-  const polar = portrait ? 0.5 : 0.62; // 수직에서 기운 각(라디안)
-  return { fov, dist, polar, shiftY: portrait ? 0.075 : 0.1 };
+  // 수직에서 기운 각(라디안): 앞쪽 비스듬한 위. 가로 화면은 세로 여유가 적어 조금 더 내려다본다(던진 동전의 정점이 화면 안에)
+  const polar = portrait ? 0.8 : 0.62;
+  const target = portrait ? new THREE.Vector3(0, 0.9, 0.55) : new THREE.Vector3(0, 1.6, 1.4);
+  return { fov, dist, polar, target, shiftY: portrait ? 0.1 : 0 };
 }
 
 export function createScene(canvas) {
@@ -54,7 +57,7 @@ export function createScene(canvas) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x120d0a);
-  scene.fog = new THREE.FogExp2(0x120d0a, 0.045);
+  scene.fog = new THREE.FogExp2(0x120d0a, 0.02);
 
   // 은은한 실내 반사(동전·옻칠 광택용). 한 번 만들고 원본 장면은 버린다.
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -64,45 +67,35 @@ export function createScene(canvas) {
   room.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
   pmrem.dispose();
 
-  // --- 카메라 ---
+  // --- 카메라: 고정 구도(사용자가 돌리지 않음). 목표점·각·거리로만 움직인다 ---
   const view = computeView(window.innerWidth, window.innerHeight);
-  const camera = new THREE.PerspectiveCamera(view.fov, window.innerWidth / window.innerHeight, 0.1, 80);
-  const target = new THREE.Vector3(0, 0, 0);
-  const placeCamera = (v, polar = v.polar, dist = v.dist) => {
-    camera.position.set(0, Math.cos(polar) * dist, Math.sin(polar) * dist).add(target);
-    camera.lookAt(target);
+  const camera = new THREE.PerspectiveCamera(view.fov, window.innerWidth / window.innerHeight, 0.1, 120);
+  const target = view.target.clone();
+  /** 목표점(target)을 중심으로 수직에서 polar 만큼 기운 dist 거리에 둔다 */
+  const placeCamera = (v, polar = v.polar, dist = v.dist, t = target) => {
+    camera.position.set(0, Math.cos(polar) * dist, Math.sin(polar) * dist).add(t);
+    camera.lookAt(t);
   };
   placeCamera(view);
   const applyShift = (w, h, v) => camera.setViewOffset(w, h, 0, Math.round(h * v.shiftY), w, h);
   applyShift(window.innerWidth, window.innerHeight, view);
 
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.copy(target);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.enablePan = false;
-  controls.minPolarAngle = 0.12;
-  controls.maxPolarAngle = 1.05;
-  controls.minDistance = view.dist * 0.65;
-  controls.maxDistance = view.dist * 1.3;
-  controls.rotateSpeed = 0.6;
-
   // --- 빛: 왼쪽 위 등잔 같은 주광 + 뒤쪽 낮은 따뜻한 역광 + 아주 옅은 하늘빛 ---
   scene.add(new THREE.HemisphereLight(0x8e8070, 0x0b0705, 0.5));
 
   const key = new THREE.DirectionalLight(0xffe2bb, 2.3);
-  key.position.set(-3.6, 9, 4.2);
+  key.position.set(-4.2, 11, 5.2);
   key.castShadow = true;
   key.shadow.mapSize.set(quality.shadow, quality.shadow);
   const sc = key.shadow.camera;
-  sc.near = 2; sc.far = 20; sc.left = -3.4; sc.right = 3.4; sc.top = 3.4; sc.bottom = -3.4;
+  sc.near = 2; sc.far = 26; sc.left = -4.3; sc.right = 4.3; sc.top = 4.3; sc.bottom = -4.3;
   key.shadow.radius = 5;
   key.shadow.bias = -0.0004;
   key.shadow.normalBias = 0.02;
   scene.add(key);
 
-  const rim = new THREE.PointLight(0xffb36b, 16, 14, 2);
-  rim.position.set(3.4, 2.2, -3.2);
+  const rim = new THREE.PointLight(0xffb36b, 22, 17, 2);
+  rim.position.set(4.2, 2.6, -4);
   scene.add(rim);
 
   // --- 점판(둥근 칠기 쟁반): 물리 단면(PHYS.tray)과 같은 모양 ---
@@ -110,7 +103,7 @@ export function createScene(canvas) {
   const rimY = (T.bevelOuter - T.flatRadius) * Math.tan(T.bevelAngle);
   const floorTex = createTrayFloorTexture(quality.floorTex);
   const floor = new THREE.Mesh(
-    new THREE.CircleGeometry(T.flatRadius + 0.02, 96),
+    new THREE.CircleGeometry(T.flatRadius + 0.02, 112),
     new THREE.MeshPhysicalMaterial({
       map: floorTex, roughness: 0.46, metalness: 0.0, clearcoat: 0.7, clearcoatRoughness: 0.24, envMapIntensity: 0.55,
     }),
@@ -125,23 +118,23 @@ export function createScene(canvas) {
   });
   const profile = [
     [T.flatRadius, 0], [T.bevelOuter, rimY], [T.wallRadius, rimY],
-    [T.wallRadius + 0.04, rimY - 0.06], [T.wallRadius + 0.07, -0.62],
+    [T.wallRadius + 0.05, rimY - 0.07], [T.wallRadius + 0.09, -0.62],
   ].map(([r, y]) => new THREE.Vector2(r, y));
-  const tray = new THREE.Mesh(new THREE.LatheGeometry(profile, 160), lacquer);
+  const tray = new THREE.Mesh(new THREE.LatheGeometry(profile, 180), lacquer);
   tray.castShadow = true;
   tray.receiveShadow = true;
   scene.add(tray);
 
   // 턱과 운두가 만나는 금선 한 줄
   const gold = new THREE.MeshStandardMaterial({ color: 0xc9a65e, metalness: 1, roughness: 0.32, envMapIntensity: 1.1 });
-  const goldLine = new THREE.Mesh(new THREE.TorusGeometry(T.bevelOuter, 0.009, 6, 192), gold);
+  const goldLine = new THREE.Mesh(new THREE.TorusGeometry(T.bevelOuter, 0.011, 6, 220), gold);
   goldLine.rotation.x = Math.PI / 2;
   goldLine.position.y = rimY + 0.002;
   scene.add(goldLine);
 
   // --- 탁자 ---
   const table = new THREE.Mesh(
-    new THREE.PlaneGeometry(40, 40),
+    new THREE.PlaneGeometry(60, 60),
     new THREE.MeshStandardMaterial({ map: createTableTexture(), roughness: 0.82, metalness: 0, envMapIntensity: 0.25 }),
   );
   table.rotation.x = -Math.PI / 2;
@@ -149,18 +142,51 @@ export function createScene(canvas) {
   table.receiveShadow = true;
   scene.add(table);
 
-  /** 화면 크기 변경: 사용자가 돌려 놓은 방위·목표점은 두고 시야·거리만 새 비율에 맞춘다 */
-  function resize(prevView) {
+  // --- 손(그릇) 암시: 먹빛이 비치는 얕은 사발 윤곽 + 판 위에 드리운 옅은 그림자 ---
+  const C = PHYS.cup;
+  const hand = new THREE.Group();
+  const bowlGeo = new THREE.SphereGeometry(C.innerRadius + 0.18, 48, 16, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45);
+  const bowl = new THREE.Mesh(bowlGeo, new THREE.MeshStandardMaterial({
+    color: 0x2a1a12, roughness: 0.55, metalness: 0.1, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide,
+  }));
+  bowl.position.y = C.floorY + C.innerRadius * 0.75;
+  hand.add(bowl);
+  const lip = new THREE.Mesh(
+    new THREE.TorusGeometry(C.innerRadius + 0.12, 0.01, 6, 96),
+    new THREE.MeshStandardMaterial({ color: 0xc9a65e, metalness: 1, roughness: 0.35, transparent: true, opacity: 0.32, depthWrite: false }),
+  );
+  lip.rotation.x = Math.PI / 2;
+  lip.position.y = bowl.position.y - (C.innerRadius + 0.18) * Math.cos(Math.PI * 0.55);
+  hand.add(lip);
+  hand.position.set(C.base.x, C.base.y, C.base.z);
+  scene.add(hand);
+
+  const shadowTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(64, 64, 4, 64, 64, 62);
+    grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  })();
+  const handShadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.4, 2.6),
+    new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }),
+  );
+  handShadow.rotation.x = -Math.PI / 2;
+  // 손은 판 앞 탁자 위 공중에 있으므로 그림자는 탁자 면에 드리운다
+  handShadow.position.set(C.base.x, -0.6, C.base.z - 0.2);
+  scene.add(handShadow);
+
+  /** 화면 크기 변경: 시야·거리를 새 비율에 맞춘다 */
+  function resize() {
     const w = window.innerWidth, h = window.innerHeight;
     const v = computeView(w, h);
-    if (prevView) {
-      const offset = camera.position.clone().sub(controls.target).multiplyScalar(v.dist / prevView.dist);
-      camera.position.copy(controls.target).add(offset);
-    }
     camera.aspect = w / h;
     camera.fov = v.fov;
-    controls.minDistance = v.dist * 0.65;
-    controls.maxDistance = v.dist * 1.3;
     applyShift(w, h, v);
     camera.updateProjectionMatrix();
     renderer.setSize(w, h, false);
@@ -175,5 +201,5 @@ export function createScene(canvas) {
     if (key.shadow.map) { key.shadow.map.dispose(); key.shadow.map = null; }
   }
 
-  return { renderer, scene, camera, controls, quality, view, placeCamera, resize, lowerQuality, target };
+  return { renderer, scene, camera, quality, view, placeCamera, resize, lowerQuality, target, hand, handShadow };
 }
