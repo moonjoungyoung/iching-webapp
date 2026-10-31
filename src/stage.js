@@ -5,9 +5,9 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { createCoinMeshes } from './coins.js';
-import { PHYS, createCoinWorld, upY, autoShakeOffset } from './physics-core.js';
+import { PHYS, createCoinWorld, upY, autoShakeOffset, createWristSpring } from './physics-core.js';
 import { playImpact, playRollTick } from './sound.js';
-import { now as clockNow } from './clock.js';
+import { now as clockNow, TIME_SCALE } from './clock.js';
 
 const reduceMotion = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
@@ -59,8 +59,9 @@ export async function createStage(canvas, rapierModule) {
     autoT: 0,
     phase: Math.random() * 10,
     intensity: 0.7,
-    pointer: { x: 0, z: 0 }, // 누른 채 끄는 손 움직임
-    motion: { o: { x: 0, y: 0, z: 0 }, v: { x: 0, y: 0, z: 0 }, a: { x: 0, y: 0, z: 0 }, until: 0 }, // 폰 가속도 → 그릇
+    pointer: { x: 0, z: 0 }, // 누른 채 끄는 손 움직임(목표)
+    pointerSm: { x: 0, z: 0 }, // 저역 필터를 거친 손 움직임(한 스텝에 튀지 않게)
+    motion: createWristSpring(), // 폰 가속도 → 손목 스프링 → 그릇
     settleUntil: 0, //       흔들기를 멈춘 뒤 동전이 손 안에서 가라앉을 때까지 물리를 돌린다
   };
   const handOffset = { x: 0, y: 0, z: 0 };
@@ -77,11 +78,15 @@ export async function createStage(canvas, rapierModule) {
   let handVis = 1;
   const handMats = s.hand.children.map((m) => ({ m: m.material, base: m.material.opacity }));
   const shadowBase = s.handShadow.material.opacity;
+  // 첫 프레임을 그리면 풀리는 약속(인트로 전환은 이것을 기다린 뒤 시작한다)
+  let firstFrameResolve = null;
+  const firstFrame = new Promise((r) => { firstFrameResolve = r; });
 
   // 처음 그린 60프레임의 프레임 시간이 나쁘면 화질을 한 단계 더 낮춘다
   const perf = { samples: [], decided: false };
   function measure(sec) {
-    if (perf.decided || sec <= 0 || sec > 0.1) return;
+    // 카메라 진입 중에는 재지 않는다(인트로 전환과 겹치는 프레임은 사양을 대표하지 않는다)
+    if (perf.decided || entrance || sec <= 0 || sec > 0.1) return;
     perf.samples.push(sec);
     if (perf.samples.length < 60) return;
     perf.decided = true;
@@ -184,27 +189,26 @@ export async function createStage(canvas, rapierModule) {
       const k = Math.min(1, shake.autoT / 0.12);
       o.x += a.x * k; o.y += a.y * k; o.z += a.z * k;
     }
-    // 폰 가속도: 스프링(손목) 모형. 가속도를 힘으로 받아 위치로 바꾸고, 놓으면 제자리로
-    const M = shake.motion;
-    const w = Math.PI * 2 * 3.2, zeta = 0.55, gain = 18;
-    for (const k of ['x', 'y', 'z']) {
-      const acc2 = gain * M.a[k] - w * w * M.o[k] - 2 * zeta * w * M.v[k];
-      M.v[k] += acc2 * dt;
-      M.o[k] += M.v[k] * dt;
-      o[k] += M.o[k];
-    }
-    M.a.x *= Math.exp(-dt * 30); M.a.y *= Math.exp(-dt * 30); M.a.z *= Math.exp(-dt * 30);
-    o.x += shake.pointer.x;
-    o.z += shake.pointer.z;
+    // 폰 가속도: 손목 스프링 모형. 가속도를 힘으로 받아 위치로 바꾸고, 놓으면 제자리로
+    const m = shake.motion.step(dt);
+    o.x += m.x; o.y += m.y; o.z += m.z;
+    // 누른 채 끄는 손 움직임: 저역 필터(시간 상수 약 70ms). 스텝당 이동 제한은 physics-core 가 한 번 더 건다
+    const kp = 1 - Math.exp(-dt / 0.07);
+    shake.pointerSm.x += (shake.pointer.x - shake.pointerSm.x) * kp;
+    shake.pointerSm.z += (shake.pointer.z - shake.pointerSm.z) * kp;
+    o.x += shake.pointerSm.x;
+    o.z += shake.pointerSm.z;
+    // 동작 줄이기: 손이 흔들리는 폭을 크게 줄인다. 결과의 공정성은 손에 거둘 때마다 정하는 균일 무작위 자세가 지키므로
+    // 흔드는 폭과 무관하다
+    if (reduceMotion()) { o.x *= 0.2; o.y *= 0.2; o.z *= 0.2; }
     handOffset.x = o.x; handOffset.y = o.y; handOffset.z = o.z;
     return o;
   }
 
   function handActive(now) {
     if (!cw || mode !== 'hand') return false;
-    const M = shake.motion;
-    const moving = Math.abs(M.o.x) + Math.abs(M.o.y) + Math.abs(M.o.z) + Math.abs(M.v.x) + Math.abs(M.v.y) + Math.abs(M.v.z) > 0.004;
-    return shake.auto || moving || now < shake.settleUntil || Math.abs(shake.pointer.x) + Math.abs(shake.pointer.z) > 0.001;
+    const pm = Math.abs(shake.pointer.x) + Math.abs(shake.pointer.z) + Math.abs(shake.pointerSm.x) + Math.abs(shake.pointerSm.z);
+    return shake.auto || shake.motion.moving() || now < shake.settleUntil || pm > 0.001;
   }
 
   function stepOnce() {
@@ -233,10 +237,11 @@ export async function createStage(canvas, rapierModule) {
     acc = 0;
     camGoal.copy(view.target);
     if (!ok) {
-      cw.gather(Math.random);
+      // 다시 던지기: 동전을 손 위에서 떨어뜨려 손바닥에 자연스럽게 내려앉게 한다(공중에 멈춰 있지 않게)
+      const reason = cw.sim.retryReason || 'timeout';
       mode = 'hand';
-      snapMeshes();
-      settle({ status: 'retry' });
+      dropIntoHand();
+      settle({ status: 'retry', reason });
       return;
     }
     mode = 'tray';
@@ -258,10 +263,11 @@ export async function createStage(canvas, rapierModule) {
     s.placeCamera(view, view.polar, view.dist, camTarget);
   }
 
-  function frame() {
+  function frame(rafT) {
     raf = 0;
-    // rAF 시각 대신 앱 시계: 녹화 때 CDP 가 문서 타임라인(rAF 시각)도 늦추므로 이중으로 늦춰지지 않게
-    const now = clockNow();
+    // 평소에는 rAF 시각을 쓰고, 녹화 검증(?debug&timescale)일 때만 앱 시계를 쓴다.
+    // 녹화 때는 CDP 가 문서 타임라인(rAF 시각)도 늦추므로 rAF 시각에 배율을 또 곱하면 이중으로 늦춰진다
+    const now = TIME_SCALE === 1 && Number.isFinite(rafT) ? rafT : clockNow();
     if (last) measure((now - last) / 1000);
     const dt = last ? Math.min((now - last) / 1000, 0.1) : 1 / 60;
     last = now;
@@ -323,7 +329,8 @@ export async function createStage(canvas, rapierModule) {
       s.placeCamera(view, polar, dist, tgt);
       if (!entrance.dropped && t >= entrance.dropAt) {
         entrance.dropped = true;
-        if (cw && mode === 'hand') dropIntoHand();
+        // 이미 누르고 흔드는 중이면 떨어뜨리지 않는다
+        if (cw && mode === 'hand' && !shake.auto) dropIntoHand();
       }
       if (t >= 1) entrance = null;
       active = true;
@@ -338,11 +345,16 @@ export async function createStage(canvas, rapierModule) {
     } else {
       handVis = hv;
     }
-    const k = 0.12 + 0.88 * handVis;
-    handMats.forEach(({ m, base }) => { m.opacity = base * k; });
-    s.handShadow.material.opacity = shadowBase * k;
+    // 던진 뒤에는 손 암시와 그림자를 완전히 지운다(판 앞에 남는 유령 고리가 없게). 그림자는 손을 따라간다
+    handMats.forEach(({ m, base }) => { m.opacity = base * handVis; });
+    s.handShadow.material.opacity = shadowBase * handVis;
+    s.hand.visible = handVis > 0.005;
+    s.handShadow.visible = handVis > 0.005;
+    s.handShadow.position.x = s.hand.position.x;
+    s.handShadow.position.z = s.hand.position.z - 0.2;
 
     renderer.render(scene, camera);
+    if (firstFrameResolve) { firstFrameResolve(); firstFrameResolve = null; }
     if (active) request(); else last = 0;
   }
 
@@ -444,15 +456,15 @@ export async function createStage(canvas, rapierModule) {
     gatherAnim = null;
     settle({ status: 'canceled' });
     if (!cw) return;
-    cw.gather(Math.random);
     mode = 'hand';
-    snapMeshes();
+    dropIntoHand(); // 공중에 멈춰 있지 않게 손 위에서 떨어뜨린다
     camGoal.copy(view.target);
     request();
   }
 
   return {
     physicsReady,
+    firstFrame,
     get mode() { return mode; },
 
     /**
@@ -460,7 +472,7 @@ export async function createStage(canvas, rapierModule) {
      * 끝 무렵 동전이 손 안으로 떨어진다. dur(ms)·ease 는 2D 오버레이 소멸과 같은 값을 쓴다.
      */
     playEntrance({ dur = 1200, ease = easeOutCubic } = {}) {
-      if (reduceMotion()) { placeCam(); request(); return; }
+      if (reduceMotion() || !dur) { placeCam(); request(); return; }
       entrance = {
         start: clockNow(), dur, ease, dropAt: 0.62, dropped: false,
         polar0: 0.04, dist0: view.dist * 1.08, target0: new THREE.Vector3(0, 0, 0),
@@ -494,13 +506,13 @@ export async function createStage(canvas, rapierModule) {
     },
     /** 폰 가속도 표본(m/s², 중력 제외. 기기 좌표 x 오른쪽 y 위 z 화면 밖) → 그릇 흔들림 */
     motionSample(ax, ay, az) {
-      if (!cw || mode === 'flight') return;
-      if (mode === 'tray') { gatherToHand(true); return; }
-      const lp = 0.5; // 저역 필터
-      const M = shake.motion;
-      M.a.x += (ax - M.a.x) * lp;
-      M.a.y += (ay - M.a.y) * lp;
-      M.a.z += (-az - M.a.z) * lp;
+      if (!cw || mode === 'flight' || mode === 'gather') return;
+      // 판 위에 누운 동전은 분명히 흔들 때만(가벼운 손떨림·센서 잡음이 아니라) 손으로 거둔다
+      if (mode === 'tray') { if (Math.hypot(ax, ay, az) > 6) gatherToHand(true); return; }
+      if (mode !== 'hand') return;
+      // 데드존(약 1.5 m/s² 이하)은 0 으로 본다. 그 이하의 표본은 물리·렌더를 깨우지 않는다
+      if (Math.hypot(ax, ay, az) <= 1.5) return;
+      shake.motion.sample(ax, ay, -az);
       shake.settleUntil = clockNow() + 900;
       request();
     },

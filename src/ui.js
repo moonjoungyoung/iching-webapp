@@ -25,6 +25,9 @@ const els = {
   menu: $('#menu'),
   soundBtn: $('#sound-btn'),
   shakeToggle: $('#shake-toggle'),
+  motionAllow: $('#motion-allow'),
+  askLine: $('#hud .ask-line'),
+  throwSub: $('#throw-btn .throw-sub'),
   menuManual: $('#menu-manual'),
   infoOpen: $('#info-open'),
   qInput: $('#question-input'),
@@ -84,6 +87,7 @@ const els = {
 
 const reduceMotion = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const finePointer = () => window.matchMedia && matchMedia('(pointer: fine)').matches;
+const coarsePointer = () => window.matchMedia && matchMedia('(pointer: coarse)').matches;
 
 let askHistory = [];
 let askGen = 0; // 점괘(결과)마다 올라가는 세대 번호: 지난 점괘의 늦은 답은 버린다
@@ -96,6 +100,13 @@ let motionOn = false; // 폰 흔들기 감지가 실제로 들어오는 기기
 let shakeEnabled = true;
 try { shakeEnabled = localStorage.getItem('iching.shake') !== '0'; } catch (e) { /* 저장소 차단 */ }
 let lastThrowState = null;
+// iOS 동작 권한: none(필요 없음·허용됨) / prompt(아직 안 물음·실패해 다시 물을 수 있음) / denied(거부함)
+let motionPermission = 'none';
+let motionRetryFailed = false;
+const overlayListeners = [];
+/** 메뉴·창이 열리거나 닫힐 때 알림(누르고 흔들던 상태를 정리하는 데 쓴다) */
+export function onOverlayChange(fn) { overlayListeners.push(fn); }
+const notifyOverlay = () => overlayListeners.forEach((fn) => fn());
 
 /* ---------------- 상단 바 · 메뉴 ---------------- */
 
@@ -104,7 +115,10 @@ export function showTopbar() { els.topbar.hidden = false; }
 function syncMenuState() {
   els.soundBtn.setAttribute('aria-checked', String(!isMuted()));
   els.soundBtn.querySelector('.menu-state').textContent = isMuted() ? '꺼짐' : '켜짐';
-  els.shakeToggle.hidden = !motionOn;
+  els.shakeToggle.hidden = !motionOn || !coarsePointer();
+  els.motionAllow.hidden = motionOn || motionPermission === 'none';
+  els.motionAllow.firstChild.textContent = motionPermission === 'denied' ? '흔들기 다시 허용' : '폰 흔들어 던지기 켜기';
+  els.motionAllow.querySelector('.menu-state').textContent = motionPermission === 'denied' && motionRetryFailed ? '설정에서 허용' : '';
   els.shakeToggle.setAttribute('aria-checked', String(shakeEnabled));
   els.shakeToggle.querySelector('.menu-state').textContent = shakeEnabled ? '켜짐' : '꺼짐';
 }
@@ -117,14 +131,18 @@ function openMenu() {
   syncMenuState();
   els.menu.hidden = false;
   els.menuBtn.setAttribute('aria-expanded', 'true');
+  syncInert();
   requestAnimationFrame(() => { const f = menuItems()[0]; if (f) f.focus({ preventScroll: true }); });
 }
 
 function closeMenu(restore = true) {
   if (els.menu.hidden) return;
+  // 바깥을 눌러 닫더라도 초점이 메뉴 안(곧 숨을 항목)에 있었다면 메뉴 단추로 되돌린다
+  const focusInside = els.menu.contains(document.activeElement);
   els.menu.hidden = true;
   els.menuBtn.setAttribute('aria-expanded', 'false');
-  if (restore) els.menuBtn.focus({ preventScroll: true });
+  if (restore || focusInside) els.menuBtn.focus({ preventScroll: true });
+  syncInert();
 }
 
 /* ---------------- 겹쳐 뜨는 창과 배경 잠금(inert) ---------------- */
@@ -139,10 +157,13 @@ export function syncInert() {
   const info = isOpen(els.infoPanel);
   const manual = isOpen(els.manualPanel);
   const sheet = isOpen(els.resultModal);
+  const menu = isOpen(els.menu);
   const setInert = (el, on) => { if (!el) return; if (on) el.setAttribute('inert', ''); else el.removeAttribute('inert'); };
   [els.topbar, els.hud].forEach((el) => setInert(el, info || manual || sheet));
+  if (menu && !(info || manual || sheet)) setInert(els.hud, true);
   setInert(els.resultModal, info || manual);
   setInert(els.manualPanel, info);
+  notifyOverlay();
 }
 
 /** 어떤 창이든 떠 있으면 true(던지기·자동 초점 보류) */
@@ -152,6 +173,17 @@ export function anyOverlayOpen() {
 
 export function isShakeEnabled() { return shakeEnabled; }
 export function isInfoOpen() { return !els.infoPanel.hidden; }
+
+/**
+ * iOS 동작 권한 상태를 메뉴에 반영한다.
+ * @param {'none'|'prompt'|'denied'} state
+ * @param {boolean} [retryFailed] 메뉴에서 다시 허용을 눌렀는데도 거부로 돌아왔는지(브라우저 설정에서 허용해야 함)
+ */
+export function setMotionPermission(state, retryFailed = false) {
+  motionPermission = state;
+  motionRetryFailed = retryFailed;
+  syncMenuState();
+}
 
 /** 흔들기 감지가 들어오기 시작하면 주 버튼 이름을 '흔들어 던지기'로 */
 export function setMotionAvailable(on) {
@@ -175,6 +207,13 @@ export function showHud() {
 
 /** 질문 칸(선택). 결과·問占 맥락(intent)으로 이어진다 */
 export function getQuestion() { return els.qInput.value.trim().slice(0, 200); }
+
+/** 결과가 있는 동안 질문 칸을 읽기 전용으로(시각적으로도 잠금). 다시 점치기에서 풀린다 */
+function lockQuestion(on) {
+  els.qInput.readOnly = on;
+  els.askLine.classList.toggle('is-locked', on);
+  els.qInput.title = on ? '이 점괘의 물음입니다. 다시 점치면 고칠 수 있습니다.' : '';
+}
 export function setQuestion(v) { els.qInput.value = v || ''; autoGrow(); }
 
 function autoGrow() {
@@ -247,19 +286,35 @@ export function setThrowState(s) {
   els.hudManual.hidden = false;
   // 물리 판이 오래 늦으면 공정한 난수로 '판 없이 던지기'를 함께 내민다
   els.noStageBtn.hidden = !s.offerNoStage || !!s.rolling;
-  els.throwBtn.disabled = !!(s.loading || s.rolling);
+  // 굴러가는 동안은 초점을 잃지 않도록 disabled 대신 aria-disabled(누름은 main 이 무시한다)
+  els.throwBtn.disabled = !!s.loading;
+  els.throwBtn.setAttribute('aria-disabled', s.rolling ? 'true' : 'false');
   els.throwBtn.setAttribute('aria-busy', s.loading ? 'true' : 'false');
   els.throwBtn.classList.toggle('is-holding', !!s.holding);
   let label;
+  let sub = '';
   if (s.loading) label = '판을 펴는 중';
   else if (s.rolling) label = '동전이 구르는 중';
   else if (s.holding) label = '놓으면 던져집니다';
   else if (s.noStage) label = '동전 던지기';
-  else if (motionOn && shakeEnabled) label = '흔들어 던지기';
-  else label = finePointer() ? '눌러서 흔들고, 놓아 던지기' : '눌러 흔들고 놓아 던지기';
+  else if (motionOn && shakeEnabled && coarsePointer() && !s.shakeBlocked) {
+    // 실제 인식 조건: 흔들어 기운을 모은 뒤 한 번 크게 털고 멈추면 던진다. 버튼은 그대로 쓸 수 있다
+    // (가속도계가 있는 노트북처럼 마우스를 쓰는 기기에는 흔들기 이름을 쓰지 않는다)
+    label = '흔들어 던지기';
+    sub = '흔들다 털면 던져집니다';
+  } else if (finePointer()) {
+    label = '눌러서 흔들고, 놓아 던지기';
+    sub = '한 번 눌러도 던져집니다';
+  } else {
+    label = '눌러 흔들고 놓아 던지기';
+    sub = '한 번 탭해도 던져집니다';
+  }
   els.throwLabel.textContent = label;
+  els.throwSub.textContent = sub;
+  els.throwSub.hidden = !sub;
   // 아래 작은 줄은 꼭 필요할 때만(판 없이 던지는 중, 다시 던지기)
-  if (s.retry) els.throwHint.textContent = '동전이 자리를 잡지 못했습니다. 이 효를 다시 던져 주세요.';
+  if (s.retry === 'outside') els.throwHint.textContent = '동전이 판 밖으로 나갔습니다. 이 효를 다시 던져 주세요.';
+  else if (s.retry) els.throwHint.textContent = '동전이 자리를 잡지 못했습니다. 이 효를 다시 던져 주세요.';
   else if (s.noStage) els.throwHint.textContent = '3D 판을 열 수 없어 판 없이 던집니다';
   else els.throwHint.textContent = '';
 }
@@ -340,7 +395,10 @@ export function prepareResult(r) {
   if (r === lastResult) return;
   lastResult = r;
   newAskGeneration();
-  intent = r.fromLink ? '' : getQuestion();
+  // 결과를 만든 순간의 물음을 결과에 고정한다(다시 열거나 묻기를 해도 같은 물음). 결과가 있는 동안 질문 칸은 잠근다
+  if (r.intent === undefined) r.intent = r.fromLink ? '' : getQuestion();
+  intent = r.intent;
+  lockQuestion(true);
   const { primary, changed, lines, interpretation } = r;
   els.resultSource.hidden = !r.manual;
 
@@ -772,7 +830,11 @@ export function initUI(h) {
     else if (e.key === 'Tab') closeMenu(false);
   });
   document.addEventListener('pointerdown', (e) => {
-    if (!els.menu.hidden && !els.menu.contains(e.target) && !els.menuBtn.contains(e.target)) closeMenu(false);
+    if (els.menu.hidden || els.menu.contains(e.target) || els.menuBtn.contains(e.target)) return;
+    const focusInside = els.menu.contains(document.activeElement);
+    closeMenu(false);
+    // 숨은 메뉴 항목에 초점이 있었다면, 바깥 누름의 기본 동작(본문으로 초점 이동)이 끝난 뒤 메뉴 단추로 되돌린다
+    if (focusInside) setTimeout(() => { if (!anyOverlayOpen()) els.menuBtn.focus({ preventScroll: true }); }, 0);
   });
   els.soundBtn.addEventListener('click', () => { setMuted(!isMuted()); syncMenuState(); });
   els.shakeToggle.addEventListener('click', () => {
@@ -781,8 +843,11 @@ export function initUI(h) {
     syncMenuState();
     if (lastThrowState) setThrowState(lastThrowState);
   });
-  els.menuManual.addEventListener('click', () => { closeMenu(false); h.onManual(); });
-  els.infoOpen.addEventListener('click', () => { closeMenu(false); openInfo(); });
+  // 메뉴에서 연 창을 닫으면 초점이 (숨은 메뉴 항목이 아니라) 메뉴 단추로 돌아오도록, 먼저 메뉴 단추로 초점을 옮긴 뒤 연다
+  els.menuManual.addEventListener('click', () => { closeMenu(); h.onManual(); });
+  els.infoOpen.addEventListener('click', () => { closeMenu(); openInfo(); });
+  // iOS: 메뉴 클릭은 사용자 활성화가 있으므로 여기서 다시 권한을 물을 수 있다
+  els.motionAllow.addEventListener('click', () => { if (h.onMotionAllow) h.onMotionAllow(); });
 
   // 질문 칸: 한 줄, 쓰면 늘어난다. Enter 는 줄바꿈 대신 칸을 닫는다
   els.qInput.addEventListener('input', autoGrow);
@@ -810,6 +875,8 @@ export function initUI(h) {
   }
 
   window.addEventListener('keydown', (e) => {
+    // 메뉴를 연 직후(첫 항목에 초점이 옮겨 가기 전)에도 Esc 로 닫힌다
+    if (!els.menu.hidden && e.key === 'Escape') { e.preventDefault(); closeMenu(); return; }
     if (!els.manualPanel.hidden && els.infoPanel.hidden) return;
     if (!els.infoPanel.hidden) {
       if (e.key === 'Escape') { e.preventDefault(); closeInfo(); } else if (e.key === 'Tab') trapTab(els.infoCard, e);
@@ -832,6 +899,7 @@ export function initUI(h) {
 export function dismissResultForNewReading() {
   newAskGeneration();
   lastResult = null;
+  lockQuestion(false);
   els.resultSource.hidden = true;
   let done = Promise.resolve();
   if (!els.resultModal.hidden) {

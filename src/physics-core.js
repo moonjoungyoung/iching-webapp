@@ -29,13 +29,14 @@ export const PHYS = {
   // 판 운두(반경 3.45) 바깥이라 화면에서 판과 겹치지 않고 판 아래쪽(손 자리)에 보인다
   cup: {
     base: { x: 0, y: 2.0, z: 5.0 },
+    maxStep: 0.07, //      스텝(1/240초)당 손이 움직일 수 있는 최대 거리: 갑자기 튀어 동전이 벽을 뚫지 않게
     innerRadius: 1.2,
     floorY: -0.55, //      그릇 안쪽 바닥(로컬)
     lidY: 0.85, //         그릇 안쪽 뚜껑(로컬)
     walls: 14,
     friction: 0.35,
     restitution: 0.25,
-    maxOffset: { x: 0.45, y: 0.35, z: 0.4 }, // 흔들기 진폭 한계
+    maxOffset: { x: 0.85, y: 0.6, z: 0.6 }, // 흔들기 진폭 한계(사람 손은 3~5cm 폭으로 흔든다)
   },
   linearDamping: 0.03, //  공기 저항(작게)
   angularDamping: 0.08,
@@ -126,12 +127,48 @@ function latheMesh(prof) {
  * @returns {{x:number,y:number,z:number}} 그릇 기준 위치에서의 변위
  */
 export function autoShakeOffset(t, phase = 0, intensity = 0.7) {
-  const A = 0.18 + 0.16 * clamp(intensity, 0, 1);
+  // 진폭은 화면에서 손이 흔들리는 게 분명히 보이도록(약 1.3~2.4cm), 위아래 가속이 중력보다 커서 동전이 손 안에서 튀어 오르며 부딪도록
+  const A = 0.3 + 0.26 * clamp(intensity, 0, 1);
   const tau = Math.PI * 2;
   return {
-    x: A * (Math.sin(tau * 6.3 * t + phase) + 0.35 * Math.sin(tau * 11.1 * t + phase * 1.7)),
-    y: A * 0.8 * Math.sin(tau * 7.7 * t + phase * 2.3),
-    z: A * 0.7 * Math.sin(tau * 5.1 * t + phase * 0.6),
+    x: A * (Math.sin(tau * 4.2 * t + phase) + 0.3 * Math.sin(tau * 8.7 * t + phase * 1.7)),
+    y: A * 0.9 * Math.sin(tau * 5.3 * t + phase * 2.3),
+    z: A * 0.7 * Math.sin(tau * 3.6 * t + phase * 0.6),
+  };
+}
+
+/**
+ * 손목 스프링: 폰 가속도(m/s², 중력 제외)를 힘으로 받아 손 변위(단위)로 바꾼다. 놓으면 제자리로 돌아온다.
+ * |a| 가 데드존 이하이면 0 으로 본다(정지한 폰의 센서 잡음 무시).
+ */
+export function createWristSpring({ hz = 3.2, zeta = 0.55, gain = 28, deadzone = 1.5, lowpass = 0.5 } = {}) {
+  const w = Math.PI * 2 * hz;
+  const o = { x: 0, y: 0, z: 0 }, v = { x: 0, y: 0, z: 0 }, a = { x: 0, y: 0, z: 0 };
+  return {
+    o, v, a,
+    /** 가속도 표본(기기 좌표를 화면·손 좌표로 바꾼 값) */
+    sample(ax, ay, az) {
+      const m = Math.hypot(ax, ay, az);
+      const k = m <= deadzone ? 0 : 1;
+      a.x += (ax * k - a.x) * lowpass;
+      a.y += (ay * k - a.y) * lowpass;
+      a.z += (az * k - a.z) * lowpass;
+    },
+    /** dt 초 진행하고 변위를 돌려준다 */
+    step(dt) {
+      for (const key of ['x', 'y', 'z']) {
+        const acc = gain * a[key] - w * w * o[key] - 2 * zeta * w * v[key];
+        v[key] += acc * dt;
+        o[key] += v[key] * dt;
+      }
+      const decay = Math.exp(-dt * 30);
+      a.x *= decay; a.y *= decay; a.z *= decay;
+      return o;
+    },
+    /** 아직 움직이는 중인지 */
+    moving() {
+      return Math.abs(o.x) + Math.abs(o.y) + Math.abs(o.z) + Math.abs(v.x) + Math.abs(v.y) + Math.abs(v.z) > 0.004;
+    },
   };
 }
 
@@ -171,7 +208,7 @@ export function createCoinWorld(RAPIER) {
     tray,
   );
   // 만일을 위한 두꺼운 안전판(평소엔 닿지 않는 높이)
-  world.createCollider(RAPIER.ColliderDesc.cuboid(5, 0.5, 5).setTranslation(0, -0.58, 0), tray);
+  world.createCollider(RAPIER.ColliderDesc.cuboid(8, 0.5, 8).setTranslation(0, -0.58, 0), tray);
 
   // --- 손(그릇): kinematic 몸체 + 컵 모양 복합 충돌체(바닥·둘레 벽·뚜껑) ---
   const C = PHYS.cup;
@@ -234,7 +271,8 @@ export function createCoinWorld(RAPIER) {
     coins.push({ body, still: 0, tilt: 0, calm: 0, nudges: 0, edgeEvents: 0, inside: false });
   }
 
-  const sim = { t: 0, active: false, damped: false };
+  // retryReason: 'outside'(판 밖) | 'timeout'(제한 시간). handRegathers: 손 안에서 빠져나가 다시 모은 횟수(검증용)
+  const sim = { t: 0, active: false, damped: false, retryReason: null, handRegathers: 0 };
 
   function setDamping(lin, ang) {
     coins.forEach(({ body }) => { body.setLinearDamping(lin); body.setAngularDamping(ang); });
@@ -276,7 +314,8 @@ export function createCoinWorld(RAPIER) {
 
   /** 손(그릇) 안의 동전 자리: 세 층으로 겹쳐 쥔 모양, 자세는 균일 무작위(공정성의 바탕) */
   function cupLayout(rng = Math.random) {
-    const b = C.base, o = cup.offset;
+    // gather() 가 손을 기준 위치로 되돌리므로 자리도 기준 위치 기준으로 잡는다
+    const b = C.base, o = { x: 0, y: 0, z: 0 };
     const a0 = rng() * Math.PI * 2;
     return coins.map((_, i) => {
       const a = a0 + i * 2.1;
@@ -291,6 +330,14 @@ export function createCoinWorld(RAPIER) {
   /** 동전을 손 안에 둔다(던지기 전 상태). layout 을 주면 그 자리에, 아니면 새로 무작위 */
   function gather(rng = Math.random, layout = null) {
     sim.active = false;
+    // 손을 기준 위치로 되돌리고 속도 기준점도 초기화한다(다음 흔들기는 스텝 제한을 따라 여기서부터 움직인다)
+    cup.offset = { x: 0, y: 0, z: 0 };
+    lastCupPos = { ...C.base };
+    cupVel = { x: 0, y: 0, z: 0 };
+    cupBody.setTranslation(C.base, true);
+    cupBody.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+    cupBody.setNextKinematicTranslation(C.base);
+    cupBody.setNextKinematicRotation({ x: 0, y: 0, z: 0, w: 1 });
     setDamping(PHYS.linearDamping, PHYS.angularDamping);
     setCupEnabled(true);
     const L = layout || cupLayout(rng);
@@ -314,9 +361,16 @@ export function createCoinWorld(RAPIER) {
    */
   function setCupOffset(off) {
     const M = C.maxOffset;
-    const o = { x: clamp(off.x, -M.x, M.x), y: clamp(off.y, -M.y, M.y), z: clamp(off.z, -M.z, M.z) };
+    const want = { x: clamp(off.x, -M.x, M.x), y: clamp(off.y, -M.y, M.y), z: clamp(off.z, -M.z, M.z) };
+    // 스텝당 이동 제한(입력이 갑자기 튀어도 손은 이어서 움직인다)
+    const S = C.maxStep;
+    const pos = {
+      x: lastCupPos.x + clamp(C.base.x + want.x - lastCupPos.x, -S, S),
+      y: lastCupPos.y + clamp(C.base.y + want.y - lastCupPos.y, -S, S),
+      z: lastCupPos.z + clamp(C.base.z + want.z - lastCupPos.z, -S, S),
+    };
+    const o = { x: pos.x - C.base.x, y: pos.y - C.base.y, z: pos.z - C.base.z };
     cup.offset = o;
-    const pos = { x: C.base.x + o.x, y: C.base.y + o.y, z: C.base.z + o.z };
     cupVel = { x: (pos.x - lastCupPos.x) / PHYS.dt, y: (pos.y - lastCupPos.y) / PHYS.dt, z: (pos.z - lastCupPos.z) / PHYS.dt };
     lastCupPos = pos;
     cupBody.setNextKinematicTranslation(pos);
@@ -367,11 +421,13 @@ export function createCoinWorld(RAPIER) {
       b.setAngvel({ x: dz * w + (rng() - 0.5) * 8, y: (rng() - 0.5) * 6, z: -dx * w + (rng() - 0.5) * 8 }, true);
       c.still = 0; c.tilt = 0; c.calm = 0; c.nudges = 0; c.edgeEvents = 0;
       c.inside = false;
+      c.deferT = 0;
       b.collider(0).setCollisionGroups(GROUP_COIN_FLIGHT);
     });
     sim.t = 0;
     sim.active = true;
     sim.damped = false;
+    sim.retryReason = null;
   }
 
   /**
@@ -382,7 +438,18 @@ export function createCoinWorld(RAPIER) {
    */
   function step(rng = Math.random, eventQueue) {
     world.step(eventQueue);
-    if (!sim.active) return false;
+    if (!sim.active) {
+      // 손 안: 동전이 손 반경·바닥·뚜껑 밖으로 빠져나가면 곧바로 다시 모은다
+      if (!cup.open) {
+        const cp = cupBody.translation();
+        const out = coins.some(({ body }) => {
+          const p = body.translation();
+          return Math.hypot(p.x - cp.x, p.z - cp.z) > C.innerRadius + 0.3 || p.y < cp.y + C.floorY - 0.3 || p.y > cp.y + C.lidY + 0.4;
+        });
+        if (out) { sim.handRegathers++; gather(rng); }
+      }
+      return false;
+    }
     sim.t += PHYS.dt;
 
     // 시간이 지나도 안 멈추면 감쇠를 서서히 올려 물리적으로 가라앉힌다(결과는 여전히 물리가 정함)
@@ -391,13 +458,27 @@ export function createCoinWorld(RAPIER) {
 
     let allStill = true;
     let outside = false;
-    for (const c of coins) {
+    const P = coins.map(({ body }) => body.translation());
+    for (let ci = 0; ci < coins.length; ci++) {
+      const c = coins[ci];
       const b = c.body;
-      const pos = b.translation();
+      const pos = P[ci];
       const r = Math.hypot(pos.x, pos.z);
       if (!c.inside && r < INSIDE_RADIUS) {
-        c.inside = true;
-        b.collider(0).setCollisionGroups(GROUP_COIN_INSIDE);
+        // 다른 동전과 겹친 채 서로 부딪히게 바꾸면 튕겨 나가므로, 겹침이 풀릴 때까지 한 스텝씩 미룬다(최대 0.3초)
+        const overlap = P.some((q, j) => j !== ci && Math.hypot(q.x - pos.x, q.y - pos.y, q.z - pos.z) < COIN_RADIUS * 2.05);
+        c.deferT = overlap ? (c.deferT || 0) + PHYS.dt : 0;
+        if (!overlap || c.deferT > 0.3) {
+          c.inside = true;
+          b.collider(0).setCollisionGroups(GROUP_COIN_INSIDE);
+        }
+      }
+      if (pos.y < -2) {
+        // 판도 탁자도 벗어나 떨어짐: 기다리지 않고 다시 던진다
+        sim.active = false;
+        sim.retryReason = 'outside';
+        setDamping(PHYS.linearDamping, PHYS.angularDamping);
+        return 'retry';
       }
       if (r > PHYS.tray.wallRadius) outside = true;
       const lv = len3(b.linvel()), av = len3(b.angvel());
@@ -436,10 +517,12 @@ export function createCoinWorld(RAPIER) {
       sim.active = false;
       setDamping(PHYS.linearDamping, PHYS.angularDamping);
       // 판 밖에 떨어져 멈춘 동전이 있으면 판정하지 않고 다시 던진다
-      return outside ? 'retry' : true;
+      if (outside) { sim.retryReason = 'outside'; return 'retry'; }
+      return true;
     }
     if (sim.t >= PHYS.giveUpTime) {
       sim.active = false;
+      sim.retryReason = outside ? 'outside' : 'timeout';
       setDamping(PHYS.linearDamping, PHYS.angularDamping);
       return 'retry';
     }

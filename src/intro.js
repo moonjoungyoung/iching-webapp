@@ -12,13 +12,27 @@ const LINGER = { full: 260, short: 120 };
 const FALLBACK = { full: 4200, short: 1600, reduced: 650 };
 // 전환 길이(ms)
 export const LEAVE_MS = { full: 1200, short: 1000, fast: 400, reduced: 300 };
-// 전환 곡선: ease-out(3D 쪽 easeOutCubic 과 같은 곡선)
-export const LEAVE_EASE_CSS = 'cubic-bezier(0.33, 1, 0.68, 1)';
+// 전환 곡선: easeOutCubic 을 0.1 간격 11개 키로 잘라 둔 것. 한지가 걷히는 크기(WAAPI 키프레임, 구간마다 linear)와
+// 3D 카메라 진입(stage.playEntrance 의 ease)이 이 같은 키를 같은 방식으로 보간하므로 두 움직임이 정확히 같은 박자로 간다
+export const LEAVE_KEYS = Array.from({ length: 11 }, (_, i) => { const t = i / 10; return [t, 1 - Math.pow(1 - t, 3)]; });
+export function leaveProgress(t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  const i = Math.min(LEAVE_KEYS.length - 2, Math.floor(t * 10));
+  const [t0, p0] = LEAVE_KEYS[i], [t1, p1] = LEAVE_KEYS[i + 1];
+  return p0 + ((p1 - p0) * (t - t0)) / (t1 - t0);
+}
+// 한지 층의 크기 배율: 처음 0.3 배(먹 자국이 손톱만 할 때)에서 26 배(먹 자국이 화면 전체를 덮을 때)까지,
+// 진행도에 대해 지수로 키운다(먹이 번지는 속도가 크기에 비례해 보이도록)
+const PAPER_S0 = 0.3, PAPER_S1 = 26;
+const paperScale = (p) => PAPER_S0 * Math.pow(PAPER_S1 / PAPER_S0, p);
+const maskSupported = () => typeof CSS !== 'undefined' && CSS.supports
+  && (CSS.supports('mask-composite', 'exclude') || CSS.supports('-webkit-mask-composite', 'xor'));
 
 /**
  * @param {{
  *   prepare?: () => Promise<any>,
- *   onLeave?: (t: { dur:number, reduced:boolean }) => void,
+ *   onLeave?: (t: { dur:number, reduced:boolean, ready:boolean, ease:(t:number)=>number }) => void,
  * }} opts
  *   prepare: 전환 전에 끝나 있어야 할 준비(3D 장면 만들기). 붓질이 끝나면 시작하고, 떠나기 전에 잠시 기다린다
  *   onLeave: 전환이 시작될 때(다음 화면 띄우기 + 카메라 진입을 같은 길이로)
@@ -32,7 +46,7 @@ export function runIntro({ prepare, onLeave } = {}) {
   if (!el || mode === 'none') {
     if (el) el.remove();
     startPrepare();
-    if (onLeave) onLeave({ dur: 0, reduced: true });
+    if (onLeave) onLeave({ dur: 0, reduced: true, ready: false });
     return Promise.resolve();
   }
 
@@ -49,15 +63,32 @@ export function runIntro({ prepare, onLeave } = {}) {
       if (leaving) return;
       leaving = true;
       cleanup();
-      // 3D 장면이 준비되기를 잠깐 기다린다(건너뛰기는 짧게)
+      // 3D 장면(첫 프레임까지)이 준비되기를 잠깐 기다린다(건너뛰기는 짧게). 제한 시간을 넘기면 ready=false:
+      // 이때는 카메라 진입 없이 전환만 하고, 늦게 준비된 장면은 최종 구도로 바로 나타난다
       const p = startPrepare();
-      if (p) await Promise.race([p, new Promise((r) => later(r, fast ? 600 : 1800))]);
+      let ready = !prepare;
+      if (p) ready = await Promise.race([p.then(() => true, () => false), new Promise((r) => later(() => r(false), fast ? 600 : 1800))]);
       const reduced = mode === 'reduced';
       const dur = reduced ? LEAVE_MS.reduced : fast ? LEAVE_MS.fast : LEAVE_MS[mode] || LEAVE_MS.full;
       el.style.setProperty('--leave', `${dur}ms`);
       el.classList.add('is-leaving');
       if (fast) el.classList.add('is-fast');
-      if (onLeave) onLeave({ dur, reduced });
+      const paper = el.querySelector('.intro-paper');
+      if (!reduced && paper && paper.animate && maskSupported()) {
+        // 컴포지터에서 도는 변환만 쓴다: 마스크(먹 자국 구멍)는 고정 크기로 한 번 그리고, 한지 층 전체를 transform: scale 로 키운다
+        el.classList.add('is-opening');
+        paper.animate(
+          LEAVE_KEYS.map(([t, p]) => ({ offset: t, transform: `translate(-50%, -50%) scale(${paperScale(p).toFixed(4)})` })),
+          { duration: dur, easing: 'linear', fill: 'forwards' },
+        );
+        // 먹 자국의 들쭉날쭉한 가장자리 바깥에 남는 모서리는 끝 무렵 함께 옅어진다
+        el.animate([{ opacity: 1, offset: 0 }, { opacity: 1, offset: 0.6 }, { opacity: 0, offset: 0.85 }, { opacity: 0, offset: 1 }],
+          { duration: dur, fill: 'forwards' });
+      } else if (!reduced && el.animate) {
+        // 마스크 합성을 못 하는 브라우저: 같은 길이·같은 곡선으로 겹쳐 사라지기
+        el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur, easing: 'cubic-bezier(0.33, 1, 0.68, 1)', fill: 'forwards' });
+      }
+      if (onLeave) onLeave({ dur, reduced, ready, ease: leaveProgress });
       later(() => { el.remove(); resolve(); }, dur + 40);
     }
 

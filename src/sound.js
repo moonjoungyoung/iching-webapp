@@ -236,11 +236,14 @@ function armGestureResume() {
   gestureArmed = true;
   const once = () => {
     gestureArmed = false;
-    window.removeEventListener('pointerdown', once, true);
+    window.removeEventListener('pointerup', once, true);
+    window.removeEventListener('click', once, true);
     window.removeEventListener('keydown', once, true);
     unlockAudio();
   };
-  window.addEventListener('pointerdown', once, true);
+  // 사용자 활성화가 생기는 이벤트에서(터치는 pointerdown 이 아니라 pointerup·click)
+  window.addEventListener('pointerup', once, true);
+  window.addEventListener('click', once, true);
   window.addEventListener('keydown', once, true);
 }
 

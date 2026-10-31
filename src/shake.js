@@ -11,6 +11,11 @@ const PEAK_WINDOW = 480; //    피크 뒤 이 안에 잠잠해져야 한다(ms)
 const MIN_CHARGE = 0.2; //     조금이라도 흔들어 모은 뒤에만 던진다
 const COOLDOWN = 1400; //      연속 트리거 방지(ms)
 const TICK_MS = 110;
+// 손(그릇)에 전하는 움직임: 이보다 크게 움직이기 시작해야 전하고(MOVE_ON), 이보다 작은 상태가
+// QUIET_MS 동안 이어지면 멈춘 것으로 본다(히스테리시스). 책상 위에 놓인 폰의 센서 잡음이 물리·렌더를 깨우지 않게
+const MOVE_ON = 1.6; //        m/s²
+const MOVE_OFF = 0.7;
+const QUIET_MS = 350;
 
 import { now } from './clock.js';
 
@@ -25,7 +30,7 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
  *   onFlick?: (opts:{power:number, spin:number, dirX:number}) => void,
  *   onSample?: (ax:number, ay:number, az:number) => void,
  * }} h
- *   onSample: 가속도 표본 하나하나(손 안 그릇을 흔드는 데 쓴다). canUse 일 때만 부른다
+ *   onSample: 가속도 표본 하나하나(손 안 그릇을 흔드는 데 쓴다). canUse 이고 폰이 실제로 움직이는 동안만 부른다
  */
 export function createShake(h) {
   let attached = false;
@@ -41,6 +46,8 @@ export function createShake(h) {
   let peak = null;
   let calmSince = 0;
   let cooldownUntil = 0;
+  let moving = false;
+  let quietSince = 0;
 
   function report(force) {
     if (force || Math.abs(energy - lastReported) > 0.015) {
@@ -67,7 +74,11 @@ export function createShake(h) {
       return;
     }
     const m = Math.hypot(ax, ay, az);
-    if (h.onSample) h.onSample(ax, ay, az);
+    if (m > MOVE_ON) { moving = true; quietSince = 0; } else if (moving && m < MOVE_OFF) {
+      if (!quietSince) quietSince = t;
+      else if (t - quietSince > QUIET_MS) moving = false;
+    } else quietSince = 0;
+    if (moving && h.onSample) h.onSample(ax, ay, az);
 
     // 기운 모으기
     if (m > SHAKE_MIN) energy = clamp01(energy + (m - SHAKE_MIN) * dt * 0.12);
@@ -142,12 +153,24 @@ export function createShake(h) {
     get available() { return available; },
     /** iOS 13+ 처럼 사용자 동작 안에서 권한을 물어야 하는 기기 */
     needsPermission: !!needsPermission,
-    /** 사용자 동작(클릭) 안에서 불러야 한다: iOS 13+ 권한 요청 */
+    /**
+     * iOS 13+ 권한 요청. 사용자 활성화가 있는 핸들러(터치의 pointerup·touchend·click) 안에서 동기로 불러야 한다.
+     * @returns {Promise<'granted'|'denied'|'error'>} error 는 활성화가 없었거나 요청 자체가 실패한 것(다음 탭에서 다시)
+     */
     requestPermission() {
-      if (!needsPermission || attached) return Promise.resolve(attached);
-      return window.DeviceMotionEvent.requestPermission()
-        .then((r) => { if (r === 'granted') attach(); return r === 'granted'; })
-        .catch(() => false);
+      if (!needsPermission || attached) return Promise.resolve('granted');
+      let req;
+      try {
+        req = window.DeviceMotionEvent.requestPermission();
+      } catch (e) {
+        return Promise.resolve('error');
+      }
+      return Promise.resolve(req)
+        .then((r) => {
+          if (r === 'granted') { attach(); return 'granted'; }
+          return r === 'denied' ? 'denied' : 'error';
+        })
+        .catch(() => 'error');
     },
     reset: resetCharge,
   };

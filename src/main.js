@@ -3,7 +3,7 @@ import { runIntro } from './intro.js';
 import {
   initUI, showTopbar, showHud, updateLadder, setThrowState, focusThrow, focusViewResult,
   showCoinToast, clearCoinToast, resetHud, showResult, prepareResult, dismissResultForNewReading,
-  getLastResult, setMotionAvailable, isShakeEnabled, setCharge, anyOverlayOpen,
+  getLastResult, setMotionAvailable, isShakeEnabled, setCharge, anyOverlayOpen, onOverlayChange, setMotionPermission,
 } from './ui.js';
 import { initManual, openManual } from './manual.js';
 import { createShake } from './shake.js';
@@ -58,7 +58,12 @@ function ensureStage() {
     });
   stageCreated
     .then((s) => s.physicsReady)
-    .then(() => { physicsOk = true; refreshThrow(); })
+    .then(() => {
+      physicsOk = true;
+      refreshThrow();
+      // 물리가 처음 준비되면 주 동작에 초점(창이 떠 있거나 질문을 쓰는 중이면 그대로 둔다)
+      if (inThrowPhase) focusThrow();
+    })
     .catch((e) => {
       console.warn('3D 판을 열지 못해 판 없이 던집니다:', e && e.message);
       stageFailed = true;
@@ -76,8 +81,8 @@ let manualReading = false; // 직접 고른 괘
 let throwGen = 0; //         던지기 세대: 다시 점치기·직접 고르기로 바뀌면 늦게 끝난 던지기는 버린다
 let offerNoStage = false; // 물리 판이 늦을 때 '판 없이 던지기' 를 함께 내민다
 let noStageTimer = 0;
-let retryShown = false;
-let permissionAsked = false;
+let retryShown = false; // false 또는 다시 던지기 사유('timeout' | 'outside')
+let shakeQuietUntil = 0;
 
 function refreshThrow() {
   if (!inThrowPhase) return;
@@ -85,7 +90,10 @@ function refreshThrow() {
     index: state.currentThrow,
     loading: !physicsOk && !stageFailed,
     rolling,
-    holding,
+    // 짧은 탭 뒤 던지기 예약 중에는 '놓으면 던져집니다' 대신 평소 이름으로(이미 놓았으므로)
+    holding: holding && !tapTimer,
+    // 질문을 쓰는 중에는 흔들기가 막히므로 버튼 방식 이름으로
+    shakeBlocked: document.activeElement === qInput,
     done: state.phase === 'complete',
     noStage: stageFailed,
     offerNoStage: offerNoStage && !physicsOk && !stageFailed,
@@ -150,7 +158,7 @@ async function onThrow(opts = {}, how = {}) {
   rolling = false;
   if (res.status === 'canceled') { refreshThrow(); return; }
   if (res.status === 'retry') {
-    retryShown = true;
+    retryShown = res.reason || 'timeout';
     refreshThrow();
     focusThrow();
     return;
@@ -158,6 +166,8 @@ async function onThrow(opts = {}, how = {}) {
   const result = lineFromFaces(res.faces);
   recordLine(result);
   showCoinToast(result, idx, { shaken: !!how.shaken, noStage: !!res.noStage });
+  // 결과를 보여 주는 동안은 폰 흔들기로 바로 거두지 않는다(손으로 거두는 시점과 맞춘다)
+  shakeQuietUntil = now() + 1300;
   updateLadder(state.lines);
   refreshThrow();
   if (state.phase === 'complete') {
@@ -238,24 +248,20 @@ function onManualSubmit(lines) {
 /* ---------------- 누르고 흔들다 놓아 던지기 ----------------
  * 버튼·스페이스·캔버스를 누르고 있는 동안 손(그릇)을 흔들고, 놓으면 던진다.
  * 짧게 탭하면 잠깐 흔든 뒤 던진다. 캔버스에서는 끄는 방향·빠르기가 던지는 방향·세기가 된다.
+ * 누르기는 시작한 포인터(pointerId) 하나만 따라가고, 취소(pointercancel)·초점 이탈·창 열림·탭 숨김이면
+ * 던지지 않고 흔들기만 멈춘다(cancelHold).
  */
 let holdStart = 0;
 let holdSource = null; // 'button' | 'key' | 'canvas'
+let holdPointer = null; // 누르기를 시작한 pointerId
+let tapTimer = 0; //      짧은 탭: 잠깐 더 흔든 뒤 던지기 예약
 let lastUpAt = -1e9;
+let lastPointerDownAt = -1e9; // 버튼 위 마지막 pointerdown(포인터가 만든 click 은 포인터 경로가 이미 처리했다)
 const trail = []; //     캔버스 포인터 자취(최근 120ms)
 let dragOrigin = null;
 
-function askPermissionOnce() {
-  // iOS 동작 권한은 첫 던지기 버튼을 누를 때(사용자 동작 안에서) 조용히 묻는다. 거부되면 버튼 방식 그대로
-  if (permissionAsked) return;
-  permissionAsked = true;
-  shake.requestPermission();
-}
-
 function beginHold(source) {
   if (holding || !canThrow() || (!physicsOk && !stageFailed)) return false;
-  askPermissionOnce();
-  unlockAudio();
   holding = true;
   holdSource = source;
   holdStart = now();
@@ -265,29 +271,62 @@ function beginHold(source) {
   return true;
 }
 
-function endHold(opts = {}) {
+/** 누르기를 던지지 않고 끝낸다: 자동 흔들기·예약 타이머를 정리하고 동전은 손 안에서 가라앉는다 */
+function cancelHold() {
   if (!holding) return;
+  holding = false;
+  holdSource = null;
+  holdPointer = null;
+  dragOrigin = null;
+  trail.length = 0;
+  clearTimeout(tapTimer);
+  tapTimer = 0;
+  if (stage) stage.stopShake();
+  refreshThrow();
+}
+
+function endHold(opts = {}) {
+  if (!holding || tapTimer) return;
   lastUpAt = now();
+  holdPointer = null;
   const held = now() - holdStart;
   const power = Math.min(1, 0.35 + held / 2400);
-  const finish = () => onThrow({ power, ...opts });
+  const finish = () => {
+    tapTimer = 0;
+    if (!canThrow()) { cancelHold(); return; }
+    holdSource = null;
+    onThrow({ power, ...opts });
+  };
   if (held < 220 && physicsOk) {
-    // 탭: 짧게 더 흔든 뒤 던진다
-    const gen = throwGen;
-    later(() => { if (holding && gen === throwGen) finish(); }, 380 - held);
+    // 탭: 짧게 더 흔든 뒤 던진다(그 사이 취소되면 cancelHold 가 예약을 지운다)
+    tapTimer = later(() => { if (holding) finish(); else tapTimer = 0; }, 380 - held);
+    refreshThrow(); // 이미 놓았으므로 '놓으면 던져집니다'를 거둔다
   } else {
     finish();
   }
 }
 
 throwBtn.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return;
+  lastPointerDownAt = now();
+  if (e.button !== 0 || holding) return;
   if (beginHold('button')) {
+    holdPointer = e.pointerId;
     try { throwBtn.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
   }
 });
-throwBtn.addEventListener('pointerup', () => { if (holdSource === 'button') endHold(); });
-throwBtn.addEventListener('pointercancel', () => { if (holdSource === 'button') endHold(); });
+throwBtn.addEventListener('pointerup', (e) => {
+  // iOS: 터치의 사용자 활성화는 pointerup·touchend·click 에서 생기므로 첫 권한 요청·소리 잠금 해제는 여기서 동기로
+  unlockAudio();
+  if (e.pointerType !== 'mouse') askMotionPermission();
+  if (holdSource === 'button' && e.pointerId === holdPointer) endHold();
+});
+throwBtn.addEventListener('pointercancel', (e) => {
+  if (holdSource === 'button' && e.pointerId === holdPointer) cancelHold();
+});
+// 포인터 캡처를 잃으면(시스템 창·제스처가 가로챔) 던지지 않는다. 정상 놓기에서는 endHold 가 먼저 holdPointer 를 비운다
+throwBtn.addEventListener('lostpointercapture', (e) => {
+  if (holdSource === 'button' && e.pointerId === holdPointer) cancelHold();
+});
 throwBtn.addEventListener('keydown', (e) => {
   if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
     e.preventDefault();
@@ -295,41 +334,57 @@ throwBtn.addEventListener('keydown', (e) => {
   }
 });
 throwBtn.addEventListener('keyup', (e) => {
-  if ((e.key === ' ' || e.key === 'Enter') && holdSource === 'key') { e.preventDefault(); endHold(); }
+  if ((e.key === ' ' || e.key === 'Enter') && holdSource === 'key') {
+    e.preventDefault();
+    unlockAudio();
+    askMotionPermission();
+    endHold();
+  }
 });
-// 스크린 리더 등 포인터·키 없이 눌린 경우: 짧게 흔든 뒤 던진다
+// 누른 채 Tab 으로 나가거나 초점을 잃으면 던지지 않는다
+throwBtn.addEventListener('blur', () => { if (holdSource === 'key') cancelHold(); });
+// 스크린 리더 등 포인터·키 없이 눌린 경우: 짧게 흔든 뒤 던진다.
+// 포인터가 만든 click(누르기를 취소한 뒤의 click 포함)은 포인터 경로가 이미 처리했으므로 던지지 않는다
 throwBtn.addEventListener('click', () => {
+  if (now() - lastPointerDownAt < 1500) return;
+  unlockAudio();
+  askMotionPermission();
   if (holding || now() - lastUpAt < 600) return;
   if (beginHold('button')) endHold();
 });
-// 버튼 위 오른쪽 클릭 메뉴가 길게 누르기를 가로채지 않게
+// 길게 누르기를 오른쪽 클릭 메뉴·롱프레스 메뉴가 가로채지 않게
 throwBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || holding) return; // 주 버튼만
   if (!beginHold('canvas')) return;
+  holdPointer = e.pointerId;
   try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
   dragOrigin = { x: e.clientX, y: e.clientY };
   trail.length = 0;
   trail.push({ x: e.clientX, y: e.clientY, t: now() });
 });
 canvas.addEventListener('pointermove', (e) => {
-  if (!holding || holdSource !== 'canvas') return;
+  if (!holding || holdSource !== 'canvas' || e.pointerId !== holdPointer) return;
   const t = now();
   trail.push({ x: e.clientX, y: e.clientY, t });
   while (trail.length > 2 && t - trail[0].t > 120) trail.shift();
   if (physicsOk && dragOrigin) {
-    const s = Math.min(window.innerWidth, window.innerHeight) * 0.25;
-    stage.pointerMove((e.clientX - dragOrigin.x) / s, (e.clientY - dragOrigin.y) / s);
+    const sz = Math.min(window.innerWidth, window.innerHeight) * 0.25;
+    stage.pointerMove((e.clientX - dragOrigin.x) / sz, (e.clientY - dragOrigin.y) / sz);
   }
 });
-function canvasUp() {
-  if (!holding || holdSource !== 'canvas') return;
+canvas.addEventListener('pointerup', (e) => {
+  unlockAudio();
+  if (e.pointerType !== 'mouse') askMotionPermission();
+  if (!holding || holdSource !== 'canvas' || e.pointerId !== holdPointer) return;
   // 마지막 120ms 의 끄는 속도 → 던지는 방향·세기
   let opts = {};
   if (trail.length >= 2) {
-    const a = trail[0], b = trail[trail.length - 1];
-    const dt = Math.max(16, b.t - a.t);
-    const vx = (b.x - a.x) / dt, vy = (b.y - a.y) / dt; // px/ms
+    const p0 = trail[0], p1 = trail[trail.length - 1];
+    const dt = Math.max(16, p1.t - p0.t);
+    const vx = (p1.x - p0.x) / dt, vy = (p1.y - p0.y) / dt; // px/ms
     const speed = Math.hypot(vx, vy);
     if (speed > 0.35) {
       opts = {
@@ -341,19 +396,57 @@ function canvasUp() {
   }
   dragOrigin = null;
   endHold(opts);
-}
-canvas.addEventListener('pointerup', canvasUp);
-canvas.addEventListener('pointercancel', canvasUp);
+});
+canvas.addEventListener('pointercancel', (e) => {
+  if (holdSource === 'canvas' && e.pointerId === holdPointer) cancelHold();
+});
+canvas.addEventListener('lostpointercapture', (e) => {
+  if (holdSource === 'canvas' && e.pointerId === holdPointer) cancelHold();
+});
+
+// 초점이 어디에도 없을 때(문서 본문) 스페이스를 누르고 있다 떼어도 던진다. 버튼에 초점이 있으면 버튼이 처리한다
+const focusFree = () => { const a = document.activeElement; return !a || a === document.body || a === canvas; };
+window.addEventListener('keydown', (e) => {
+  if (e.key !== ' ' || e.repeat || !focusFree() || anyOverlayOpen()) return;
+  e.preventDefault();
+  beginHold('key');
+});
+window.addEventListener('keyup', (e) => {
+  if (e.key !== ' ' || holdSource !== 'key' || !focusFree()) return;
+  e.preventDefault();
+  unlockAudio();
+  askMotionPermission();
+  endHold();
+});
+
+// 질문 칸 밖을 누르면 확실히 칸을 닫는다(모바일에서 캔버스를 눌러도 키보드가 남는 경우)
+document.addEventListener('pointerdown', (e) => {
+  if (document.activeElement === qInput && e.target !== qInput) qInput.blur();
+}, true);
+qInput.addEventListener('blur', refreshThrow);
+
+// 창이 초점을 잃거나 탭이 숨으면, 메뉴·창이 열리면 누르기를 던지지 않고 정리한다
+window.addEventListener('blur', cancelHold);
+document.addEventListener('visibilitychange', () => { if (document.hidden) cancelHold(); });
+onOverlayChange(() => { if (anyOverlayOpen()) cancelHold(); });
 
 /* ---------------- 폰 흔들기 → 털기 ---------------- */
 
 const shake = createShake({
-  canUse: () => inThrowPhase && isShakeEnabled() && !rolling && physicsOk && state.phase === 'ready'
+  canUse: () => inThrowPhase && isShakeEnabled() && !rolling && physicsOk && state.phase === 'ready' && now() >= shakeQuietUntil
     && !anyOverlayOpen() && !document.hidden
     && !/TEXTAREA|INPUT/.test(document.activeElement ? document.activeElement.tagName : ''),
   onAvailable: () => setMotionAvailable(true),
   onCharge: (e) => setCharge(e),
-  onSample: (ax, ay, az) => { if (stage) stage.motionSample(ax, ay, az); },
+  onSample: (ax, ay, az) => {
+    if (!stage) return;
+    // 기기 좌표 → 화면 좌표: 가로로 돌려 쥐어도 흔드는 방향이 화면과 맞게
+    const deg = (screen.orientation && Number.isFinite(screen.orientation.angle)) ? screen.orientation.angle
+      : (Number.isFinite(window.orientation) ? window.orientation : 0);
+    const th = (deg * Math.PI) / 180;
+    const c = Math.cos(th), sn = Math.sin(th);
+    stage.motionSample(ax * c - ay * sn, ax * sn + ay * c, az);
+  },
   onTick: (k) => {
     playShakeClinks(0.2 + k * 0.4);
     if (navigator.vibrate && !reduceMotion()) navigator.vibrate(8);
@@ -365,11 +458,33 @@ const shake = createShake({
   },
 });
 
+/* ---------------- iOS 동작 권한 ----------------
+ * 첫 던지기 버튼을 누르고 뗄 때(사용자 활성화 안에서) 조용히 묻는다.
+ * 요청 자체가 실패하면(활성화 없음 등) 다음 탭에서 다시 묻고, 명시적으로 거부하면 버튼 방식으로 쓰면서
+ * 메뉴에 '흔들기 다시 허용'을 둔다.
+ */
+let motionPerm = shake.needsPermission ? 'prompt' : 'none';
+let permPending = false;
+setMotionPermission(motionPerm);
+
+function askMotionPermission(fromMenu = false) {
+  if (permPending || motionPerm === 'none' || (motionPerm === 'denied' && !fromMenu)) return;
+  permPending = true;
+  shake.requestPermission().then((r) => {
+    permPending = false;
+    if (r === 'granted') motionPerm = 'none';
+    else if (r === 'denied') motionPerm = 'denied';
+    // 'error' 는 그대로 둔다('prompt' 면 다음 탭에서 다시 묻는다)
+    setMotionPermission(motionPerm, fromMenu && r === 'denied');
+  });
+}
+
 initUI({
   onThrowNoStage: () => onThrow({}, { noStage: true }),
   onManual: () => openManual(state.phase === 'complete' ? [] : state.lines),
   onNewReading,
   onViewResult: () => { const r = getLastResult(); if (r) showResult(r); },
+  onMotionAllow: () => askMotionPermission(true),
 });
 initManual({ onSubmit: onManualSubmit });
 
@@ -410,8 +525,9 @@ if (!openFromLink()) {
   loadRapier();
   loadStageModule();
   runIntro({
-    prepare: () => ensureStage(),
-    onLeave: ({ dur, reduced }) => {
+    // 3D 장면을 만들고 첫 프레임까지 그린 뒤에 전환을 시작한다(전환 중 멈칫하지 않게)
+    prepare: () => ensureStage().then((st) => st.firstFrame),
+    onLeave: ({ dur, reduced, ready, ease }) => {
       startThrowing();
       const hud = document.getElementById('hud');
       const top = document.getElementById('topbar');
@@ -420,8 +536,9 @@ if (!openFromLink()) {
         el.classList.add(reduced ? 'is-fading-in' : 'is-entering');
         later(() => el.classList.remove('is-entering', 'is-fading-in'), dur + 50);
       });
-      if (stage) stage.playEntrance({ dur: reduced ? 0 : dur });
-      else ensureStage().then((s) => s.playEntrance({ dur: reduced ? 0 : 900 })).catch(() => {});
+      // 준비가 제한 시간 안에 끝난 정상 경로만 카메라 진입을 전환과 함께 돌린다.
+      // 늦게 준비된 장면은 따로 진입시키지 않고 최종 카메라 자리(createStage 의 기본 구도)에 바로 둔다
+      if (ready && stage) stage.playEntrance({ dur: reduced ? 0 : dur, ease });
       later(() => focusThrow(), dur);
     },
   });
@@ -430,5 +547,5 @@ if (!openFromLink()) {
   if (intro) intro.remove();
 }
 
-// 질문 칸으로 초점이 옮겨 가면 누르고 있던 흔들기를 그 자리에서 던진다
-qInput.addEventListener('focus', () => { if (holding) endHold(); });
+// 질문 칸으로 초점이 옮겨 가면 누르고 있던 흔들기는 던지지 않고 멈춘다
+qInput.addEventListener('focus', () => { cancelHold(); refreshThrow(); });

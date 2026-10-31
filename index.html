@@ -99,6 +99,7 @@
       <div id="menu" class="menu" role="menu" aria-labelledby="menu-btn" hidden>
         <button id="sound-btn" class="menu-item" type="button" role="menuitemcheckbox" aria-checked="true">동전 소리<span class="menu-state" aria-hidden="true"></span></button>
         <button id="shake-toggle" class="menu-item" type="button" role="menuitemcheckbox" aria-checked="true" hidden>폰 흔들어 던지기<span class="menu-state" aria-hidden="true"></span></button>
+        <button id="motion-allow" class="menu-item" type="button" role="menuitem" hidden>폰 흔들어 던지기 켜기<span class="menu-state"></span></button>
         <button id="menu-manual" class="menu-item" type="button" role="menuitem">효 직접 고르기</button>
         <button id="info-open" class="menu-item" type="button" role="menuitem" aria-haspopup="dialog" aria-controls="info-panel"><span class="hanja" aria-hidden="true">占法</span> 점괘 보는 법</button>
       </div>
@@ -119,7 +120,7 @@
       <div class="hud-actions">
         <button id="throw-btn" class="btn btn--throw" type="button" disabled aria-describedby="throw-hint">
           <span class="charge" aria-hidden="true"><i id="charge-bar"></i></span>
-          <span class="throw-step"><span id="throw-yao" class="throw-yao hanja">初爻</span><span id="throw-count" class="throw-count">1/6</span></span><span class="throw-label">판을 펴는 중</span>
+          <span class="throw-step"><span id="throw-yao" class="throw-yao hanja">初爻</span><span id="throw-count" class="throw-count">1/6</span></span><span class="throw-text"><span class="throw-label">판을 펴는 중</span><span class="throw-sub" hidden></span></span>
         </button>
         <button id="view-result-btn" class="btn btn--throw btn--ghost" type="button" hidden>괘 다시 보기</button>
         <p id="throw-hint" class="throw-hint" aria-live="polite"></p>

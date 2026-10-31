@@ -33,7 +33,9 @@ export function computeView(w, h) {
   const fov = portrait ? 40 : 34;
   const halfFov = THREE.MathUtils.degToRad(fov / 2);
   // 보이는 반폭·반높이(목표점 거리에서, 단위). 동전 지름 1 단위 / (2 × halfW) = 화면 폭 대비 동전 크기
-  const halfW = portrait ? 3.55 : 4.6;
+  // 세로로 덜 긴 폰(예: 320x568)은 아래 던지기 자리가 화면에서 차지하는 몫이 커서, 조금 물러나고 장면을 위로 올린다
+  const squat = portrait ? Math.max(0, aspect - 0.48) : 0;
+  const halfW = portrait ? 3.55 * (1 + squat * 1.4) : 4.6;
   const halfH = portrait ? 4.2 : 5.6;
   const dW = halfW / (Math.tan(halfFov) * aspect);
   const dH = halfH / Math.tan(halfFov);
@@ -41,7 +43,7 @@ export function computeView(w, h) {
   // 수직에서 기운 각(라디안): 앞쪽 비스듬한 위. 가로 화면은 세로 여유가 적어 조금 더 내려다본다(던진 동전의 정점이 화면 안에)
   const polar = portrait ? 0.8 : 0.62;
   const target = portrait ? new THREE.Vector3(0, 0.9, 0.55) : new THREE.Vector3(0, 1.6, 1.4);
-  return { fov, dist, polar, target, shiftY: portrait ? 0.1 : 0 };
+  return { fov, dist, polar, target, shiftY: portrait ? 0.1 + squat * 0.7 : 0 };
 }
 
 export function createScene(canvas) {
@@ -142,39 +144,80 @@ export function createScene(canvas) {
   table.receiveShadow = true;
   scene.add(table);
 
-  // --- 손(그릇) 암시: 먹빛이 비치는 얕은 사발 윤곽 + 판 위에 드리운 옅은 그림자 ---
+  // --- 손 암시: 테두리 없이, 모아 쥔 두 손바닥이 만드는 오목한 음영과 탁자 위 손 그림자로만 ---
+  // 선(금테)을 쓰면 판 앞쪽과 겹쳐 '또 하나의 그릇'처럼 읽히므로, 빛을 받지 않는 어두운 살빛 면과 그림자만 둔다.
   const C = PHYS.cup;
   const hand = new THREE.Group();
-  const bowlGeo = new THREE.SphereGeometry(C.innerRadius + 0.18, 48, 16, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45);
-  const bowl = new THREE.Mesh(bowlGeo, new THREE.MeshStandardMaterial({
-    color: 0x2a1a12, roughness: 0.55, metalness: 0.1, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide,
-  }));
-  bowl.position.y = C.floorY + C.innerRadius * 0.75;
-  hand.add(bowl);
-  const lip = new THREE.Mesh(
-    new THREE.TorusGeometry(C.innerRadius + 0.12, 0.01, 6, 96),
-    new THREE.MeshStandardMaterial({ color: 0xc9a65e, metalness: 1, roughness: 0.35, transparent: true, opacity: 0.32, depthWrite: false }),
+  const softTex = (draw, w = 128, h = 128) => {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    draw(c.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  // 오목한 손바닥 안쪽 면: 가장자리로 갈수록 옅어지는 어두운 살빛(안쪽 면만 보인다)
+  const cupR = C.innerRadius + 0.2;
+  const palmBowl = new THREE.Mesh(
+    new THREE.SphereGeometry(cupR, 48, 16, 0, Math.PI * 2, Math.PI * 0.6, Math.PI * 0.4),
+    new THREE.MeshBasicMaterial({
+      map: softTex((g, w, h) => {
+        // 구의 아래쪽 띠: v=0(가장자리)에서 투명, v=1(바닥)으로 짙게
+        const grad = g.createLinearGradient(0, 0, 0, h);
+        // 가장자리(손가락·손날)는 빛을 조금 받아 옅은 살빛, 안쪽(손바닥)으로 갈수록 그늘
+        grad.addColorStop(0, 'rgba(120, 84, 60, 0)');
+        grad.addColorStop(0.12, 'rgba(126, 88, 62, 0.42)');
+        grad.addColorStop(0.45, 'rgba(78, 50, 34, 0.62)');
+        grad.addColorStop(1, 'rgba(34, 20, 13, 0.9)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, w, h);
+      }, 4, 128),
+      transparent: true, opacity: 0.85, depthWrite: false, side: THREE.BackSide,
+    }),
   );
-  lip.rotation.x = Math.PI / 2;
-  lip.position.y = bowl.position.y - (C.innerRadius + 0.18) * Math.cos(Math.PI * 0.55);
-  hand.add(lip);
+  palmBowl.position.y = C.floorY + cupR * 0.95;
+  hand.add(palmBowl);
+  // 동전 밑 손바닥 가운데의 짙은 음영(손금 자리처럼 오목하게)
+  const palmShade = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.6, 2.2),
+    new THREE.MeshBasicMaterial({
+      map: softTex((g, w, h) => {
+        const grad = g.createRadialGradient(w / 2, h / 2, 2, w / 2, h / 2, w / 2);
+        grad.addColorStop(0, 'rgba(14, 8, 5, 0.75)');
+        grad.addColorStop(0.6, 'rgba(14, 8, 5, 0.3)');
+        grad.addColorStop(1, 'rgba(14, 8, 5, 0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, w, h);
+      }),
+      transparent: true, opacity: 0.7, depthWrite: false,
+    }),
+  );
+  palmShade.rotation.x = -Math.PI / 2;
+  palmShade.position.y = C.floorY - 0.005;
+  hand.add(palmShade);
   hand.position.set(C.base.x, C.base.y, C.base.z);
   scene.add(hand);
 
-  const shadowTex = (() => {
-    const c = document.createElement('canvas');
-    c.width = c.height = 128;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(64, 64, 4, 64, 64, 62);
-    grad.addColorStop(0, 'rgba(0,0,0,0.55)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 128, 128);
-    return new THREE.CanvasTexture(c);
-  })();
+  // 탁자 위 그림자: 나란히 모아 쥔 두 손 모양(두 손바닥과 손가락 끝 쪽이 판을 향함)
+  const shadowTex = softTex((g, w, h) => {
+    g.filter = 'blur(9px)';
+    g.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    for (const sgn of [-1, 1]) {
+      g.save();
+      g.translate(w / 2 + sgn * w * 0.15, h * 0.55);
+      g.rotate(sgn * 0.18);
+      g.beginPath();
+      g.ellipse(0, 0, w * 0.17, h * 0.3, 0, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
+    g.beginPath();
+    g.ellipse(w / 2, h * 0.68, w * 0.24, h * 0.16, 0, 0, Math.PI * 2);
+    g.fill();
+  }, 160, 160);
   const handShadow = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.4, 2.6),
-    new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }),
+    new THREE.PlaneGeometry(3.6, 3.6),
+    new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: 0.85, depthWrite: false }),
   );
   handShadow.rotation.x = -Math.PI / 2;
   // 손은 판 앞 탁자 위 공중에 있으므로 그림자는 탁자 면에 드리운다

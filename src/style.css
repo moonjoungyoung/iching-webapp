@@ -63,6 +63,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html { -webkit-text-size-adjust: 100%; }
+html, body { overscroll-behavior: none; } /* 당겨서 새로고침·스크롤 연쇄 방지(누르고 흔드는 중에) */
 
 body {
   min-height: 100dvh;
@@ -145,14 +146,40 @@ button:disabled { cursor: default; }
   --d-title: 0.25s; --t-title: 0.4s; --d-seal: 0.55s; --d-cap: 0.5s;
 }
 
+/* 한지 층: 화면보다 훨씬 큰 정사각형을 0.3 배로 줄여 둔다(결 크기는 화면에서 384px 그대로).
+   걷힐 때는 가운데 먹 자국 모양 구멍(고정 크기 마스크)을 둔 채 이 층을 transform: scale 로 키운다(컴포지터에서 돈다) */
 .intro-paper {
   position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(120% 90% at 50% 46%, transparent 52%, rgba(92, 70, 40, 0.24) 100%),
-    var(--grain) 0 0 / 384px 384px,
-    var(--hanji);
+  left: 50%;
+  top: 50%;
+  z-index: 0;
+  width: 440vmax;
+  height: 440vmax;
+  transform: translate(-50%, -50%) scale(0.3);
+  background: var(--grain) 0 0 / 1280px 1280px, var(--hanji);
+  -webkit-mask-image: linear-gradient(#000 0 0), url('./assets/ink-mask.svg');
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: 100% 100%, 0 0;
+  -webkit-mask-composite: xor;
+  mask-image: linear-gradient(#000 0 0), url('./assets/ink-mask.svg');
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: 100% 100%, 0 0;
+  mask-composite: exclude;
 }
+.intro.is-opening .intro-paper { -webkit-mask-size: 100% 100%, 10vmax 10vmax; mask-size: 100% 100%, 10vmax 10vmax; will-change: transform; }
+/* 가장자리 그늘(한지 층과 따로 두어 확대되지 않게) */
+.intro::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 46%, transparent 52%, rgba(92, 70, 40, 0.24) 100%);
+}
+.intro.is-leaving::before { animation: fade-out calc(var(--leave, 1200ms) * 0.3) ease forwards; }
+.intro-stage, .intro-caption, .intro-skip { z-index: 2; }
 
 .intro-stage {
   position: relative;
@@ -242,34 +269,10 @@ button:disabled { cursor: default; }
 .intro-skip:hover { color: var(--ink); }
 
 /* 인트로에서 던지기 화면으로: 한 장면으로 이어진다.
-   가운데부터 먹 자국 모양(들쭉날쭉한 가장자리)으로 한지가 걷히고, 같은 길이·같은 ease-out 으로
-   3D 카메라가 위에서 손 앞 시점으로 내려앉는다(stage.playEntrance). 글씨는 살짝 커지며 먹이 마르듯 옅어진다. */
-@property --blot { syntax: '<length>'; inherits: false; initial-value: 0px; }
-.intro.is-leaving {
-  pointer-events: none;
-  --blot: 0px;
-  -webkit-mask-image: linear-gradient(#000 0 0), url('./assets/ink-mask.svg');
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center, 50% 50%;
-  -webkit-mask-size: 100% 100%, var(--blot) var(--blot);
-  -webkit-mask-composite: xor;
-  mask-image: linear-gradient(#000 0 0), url('./assets/ink-mask.svg');
-  mask-repeat: no-repeat;
-  mask-position: center, 50% 50%;
-  mask-size: 100% 100%, var(--blot) var(--blot);
-  mask-composite: exclude;
-  animation: blot var(--leave, 1200ms) linear forwards;
-}
-/* 먹은 처음에 빠르게 번지고 끝에서 천천히 멈춘다(구간마다 ease-out). 화면이 다 열리는 크기(약 230vmax)에
-   전환 끝 무렵 닿도록 나눠 두고, 마지막 두 할은 한지 자체가 옅어진다 */
-@keyframes blot {
-  0% { --blot: 0px; animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
-  30% { --blot: 70vmax; animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
-  65% { --blot: 160vmax; animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
-  82% { opacity: 1; }
-  100% { --blot: 260vmax; opacity: 0; }
-}
-.intro.is-leaving .intro-stage { animation: recede var(--leave, 1200ms) cubic-bezier(0.33, 1, 0.68, 1) forwards; }
+   가운데부터 먹 자국 모양(들쭉날쭉한 가장자리)으로 한지가 걷히고(intro.js 가 한지 층 크기를 WAAPI 로 키운다),
+   같은 키프레임 보간으로 3D 카메라가 위에서 손 앞 시점으로 내려앉는다(stage.playEntrance). 글씨는 살짝 커지며 먼저 옅어진다. */
+.intro.is-leaving { pointer-events: none; }
+.intro.is-leaving .intro-stage { animation: recede calc(var(--leave, 1200ms) * 0.5) cubic-bezier(0.33, 1, 0.68, 1) forwards; }
 .intro.is-leaving .intro-caption, .intro.is-leaving .intro-skip { animation: fade-out calc(var(--leave, 1200ms) * 0.4) ease forwards; }
 @keyframes recede { to { transform: translateY(-3vh) scale(1.12); opacity: 0; } }
 .intro.is-leaving.is-fast .intro-stage { animation-name: fade-out; }
@@ -281,7 +284,7 @@ button:disabled { cursor: default; }
 [data-intro='reduced'] .intro-title { clip-path: none; }
 [data-intro='reduced'] .intro-seal, [data-intro='reduced'] .intro-caption { opacity: 1; transform: rotate(-3deg); }
 [data-intro='reduced'] .intro-caption { transform: none; }
-[data-intro='reduced'] .intro.is-leaving { -webkit-mask-image: none; mask-image: none; animation: fade-out var(--leave, 300ms) ease forwards; }
+[data-intro='reduced'] .intro.is-leaving { animation: fade-out var(--leave, 300ms) ease forwards; }
 @keyframes fade-out { to { opacity: 0; } }
 
 /* 던지기 화면이 들어오는 박자: 인트로 전환과 같은 길이, 조금 늦게 시작해 먹이 걷히는 뒤를 따라온다 */
@@ -499,7 +502,20 @@ button:disabled { cursor: default; }
 }
 .btn--throw:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--gold), inset 0 0 0 4px #17110d, inset 0 0 0 5px rgba(201, 166, 94, 0.3); }
 .btn--throw { position: relative; overflow: hidden; }
-.btn--throw:disabled { opacity: 0.55; }
+.btn--throw:disabled, .btn--throw[aria-disabled='true'] { opacity: 0.55; cursor: default; }
+/* 누르고 흔드는 영역: 스크롤·확대·글자 선택·길게 누르기 메뉴가 끼어들지 않게 */
+#throw-btn, #scene {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.throw-text { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.throw-sub { font-size: 11px; font-weight: 400; letter-spacing: 0.02em; color: var(--mist); white-space: nowrap; }
+.btn--throw.is-holding .throw-sub { display: none; }
+/* 결과가 있는 동안 잠긴 질문 칸 */
+.ask-line.is-locked .ask-field { color: var(--mist); border-bottom-style: dotted; cursor: default; background: transparent; }
+.ask-line.is-locked .ask-mark { color: var(--seal-2); }
 /* 흔들어 모은 기운: 버튼 윗변을 따라 차오르는 금선 */
 .charge { position: absolute; left: 6px; right: 6px; top: 6px; height: 2px; pointer-events: none; }
 .charge i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-2)); transform: scaleX(0); transform-origin: left center; transition: transform 0.12s linear; box-shadow: 0 0 8px rgba(228, 203, 146, 0.6); }
@@ -745,6 +761,20 @@ button:disabled { cursor: default; }
 /* =========================================================
    넓은 화면
    ========================================================= */
+/* 아주 좁은 폰: 버튼 이름은 두 줄까지 허용하고 사다리를 줄인다 */
+@media (max-width: 359px) {
+  .ladder li { grid-template-columns: 24px 30px 10px; gap: 5px; }
+  .yao-name { white-space: nowrap; font-size: 10px; }
+  .btn--throw { white-space: normal; padding: 6px 12px; }
+  .btn--throw .throw-label { font-size: 0.875rem; line-height: 1.3; }
+  .hud-bottom { gap: 10px 10px; }
+}
+@media (max-height: 640px) and (orientation: portrait) {
+  .ask-line { top: calc(54px + var(--safe-t)); }
+  .throw-guide { font-size: 0.8125rem; }
+  .ladder { gap: 5px; padding-bottom: 46px; }
+}
+
 @media (min-width: 900px) {
   /* 넓은 화면: 판과 손이 가운데 세로로 놓이므로 던지기 자리는 오른쪽 아래에 둔다 */
   .hud-bottom {

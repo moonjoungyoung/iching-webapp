@@ -7,7 +7,7 @@
 //   node scripts/physics-sim.mjs 1000 42    # 시나리오별 횟수, 시드
 
 import RAPIER from '@dimforge/rapier3d-compat';
-import { createCoinWorld, PHYS, autoShakeOffset } from '../src/physics-core.js';
+import { createCoinWorld, PHYS, autoShakeOffset, createWristSpring } from '../src/physics-core.js';
 
 const THROWS = Number(process.argv[2] || 300);
 const SEED = Number(process.argv[3] || 20261031);
@@ -21,6 +21,12 @@ const SCENARIOS = [
   { name: '강한 털기(power 1, 왼쪽 앞)', shake: 1.2, intensity: 1, opts: { power: 1, dirX: -1, dirZ: 0.6 } },
   { name: '강한 털기(power 1, 오른쪽 뒤)', shake: 1.2, intensity: 1, opts: { power: 1, dirX: 1, dirZ: -1 } },
   { name: '캔버스 끌어 던지기(위로 빠르게)', shake: 0.8, intensity: 0.6, opts: { power: 0.9, dirX: 0.2, dirZ: -1 } },
+  // 판 위를 누른 채 손을 크게 끌며 흔들기(포인터 변위 + 저역 필터, 진폭 한계 끝까지)
+  { name: '포인터로 크게 끌며 흔들기', shake: 1.0, input: 'pointer', opts: { power: 0.8, dirX: -0.4, dirZ: -0.8 } },
+  // 폰 흔들기: 손목 스프링에 4Hz 로 세게 흔든 가속도(최대 약 20 m/s²)를 넣고 털기
+  { name: '폰 흔들기(손목 스프링)', shake: 1.6, input: 'phone', opts: { power: 0.9, dirX: 0.3, dirZ: -0.3 } },
+  // 손에 거두자마자(동전이 아직 쌓여 떠 있을 때) 바로 던지기
+  { name: '거두자마자 바로 던지기', shake: 0, settle: 0, opts: { power: 0.5 } },
 ];
 
 // 재현 가능한 난수 (mulberry32)
@@ -44,20 +50,41 @@ console.log(`시나리오별 ${THROWS}회, 시드 ${SEED}, 중력 ${PHYS.gravity
 let allHeads = 0, allCoins = 0;
 
 for (const sc of SCENARIOS) {
-  let heads = 0, coins = 0, retries = 0, oob = 0, below = 0, inHandEscape = 0, maxH = 0;
+  let heads = 0, coins = 0, retries = 0, oob = 0, below = 0, inHandEscape = 0, maxH = 0, handRegather = 0;
   const settle = [], flights = [];
   const sumDist = { 0: 0, 1: 0, 2: 0, 3: 0 };
   for (let n = 0; n < THROWS; n++) {
     cw.gather(rng);
+    const regather0 = cw.sim.handRegathers;
     // 손 안에서 가라앉히기 → 흔들기 → 잠깐 멈춤
-    for (let s = 0; s < Math.round(0.4 / PHYS.dt); s++) { cw.setCupOffset({ x: 0, y: 0, z: 0 }); cw.step(rng); }
+    const settleS = sc.settle ?? 0.4;
+    for (let s = 0; s < Math.round(settleS / PHYS.dt); s++) { cw.setCupOffset({ x: 0, y: 0, z: 0 }); cw.step(rng); }
     const phase = rng() * 10;
+    const spring = createWristSpring();
+    const pm = { x: 0, z: 0 };
     for (let s = 0; s < Math.round(sc.shake / PHYS.dt); s++) {
-      cw.setCupOffset(autoShakeOffset(s * PHYS.dt, phase, sc.intensity));
+      const t = s * PHYS.dt;
+      let off;
+      if (sc.input === 'pointer') {
+        // 목표 변위가 진폭 한계 끝까지 크게 오가고, 브라우저와 같은 저역 필터(70ms)를 거친다
+        const tx = Math.sign(Math.sin(t * Math.PI * 2 * 2.5 + phase)) * PHYS.cup.maxOffset.x;
+        const tz = Math.sin(t * Math.PI * 2 * 1.7 + phase) * PHYS.cup.maxOffset.z;
+        const k = 1 - Math.exp(-PHYS.dt / 0.07);
+        pm.x += (tx - pm.x) * k; pm.z += (tz - pm.z) * k;
+        off = { x: pm.x, y: 0, z: pm.z };
+      } else if (sc.input === 'phone') {
+        const g = 20 * Math.sin(t * Math.PI * 2 * 4 + phase);
+        spring.sample(g * 0.8, g * 0.6, g * 0.2);
+        off = { ...spring.step(PHYS.dt) };
+      } else {
+        off = autoShakeOffset(t, phase, sc.intensity);
+      }
+      cw.setCupOffset(off);
       cw.step(rng);
     }
+    if (cw.sim.handRegathers > regather0) handRegather++;
     // 흔드는 동안 손 밖으로 빠져나간 동전이 있는지(그릇 벽 터널링)
-    const C = PHYS.cup.base;
+    const C = cw.cup.body.translation(); // 흔들린 지금 손 위치 기준
     if (cw.coins.some(({ body }) => { const p = body.translation(); return Math.hypot(p.x - C.x, p.z - C.z) > PHYS.cup.innerRadius + 0.5 || p.y < C.y - 1.5; })) inHandEscape++;
     cw.release(rng, sc.opts);
     let res = false, out = false, bl = false, landed = null;
@@ -91,6 +118,6 @@ for (const sc of SCENARIOS) {
   console.log(`  앞면 비율 ${pct(heads, coins)}  (앞면 수 0/1/2/3: ${[0, 1, 2, 3].map((k) => pct(sumDist[k], done)).join(' / ')}, 기대 12.5/37.5/37.5/12.5%)`);
   console.log(`  안정 시간 평균 ${mean(settle).toFixed(2)}s  중앙 ${q(settle, 0.5).toFixed(2)}s  p90 ${q(settle, 0.9).toFixed(2)}s  최대 ${q(settle, 1).toFixed(2)}s`);
   console.log(`  첫 착지까지 비행 평균 ${mean(flights).toFixed(2)}s (최소 ${q(flights, 0).toFixed(2)} 최대 ${q(flights, 1).toFixed(2)})  최고 높이 ${maxH.toFixed(1)}`);
-  console.log(`  다시 던지기 ${retries}회(${pct(retries, THROWS)})  판 이탈 ${oob}  바닥 관통 ${below}  손 안 이탈 ${inHandEscape}`);
+  console.log(`  다시 던지기 ${retries}회(${pct(retries, THROWS)})  판 이탈 ${oob}  바닥 관통 ${below}  손 안 이탈(던지는 순간) ${inHandEscape}  흔드는 중 빠져나가 다시 모음 ${handRegather}`);
 }
 console.log(`\n전체 앞면 비율 ${pct(allHeads, allCoins)} (${allCoins}닢)`);
