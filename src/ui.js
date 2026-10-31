@@ -97,6 +97,7 @@ const els = {
   askExamples: $('#ask-examples'),
   askInput: $('#ask-input'),
   askSendBtn: $('#ask-send-btn'),
+  askLive: $('#ask-live'),
 };
 
 const reduceMotion = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -463,6 +464,7 @@ function openSheet() {
 function hideSheetNow() {
   const wrap = els.resultModal;
   if (wrap.hidden) return;
+  abortAsk();
   closeInfo();
   wrap.classList.remove('is-open');
   const done = () => { if (!wrap.classList.contains('is-open')) { wrap.hidden = true; syncInert(); } };
@@ -526,6 +528,11 @@ function newAskGeneration() {
   if (askCtrl) askCtrl.abort();
   askCtrl = null;
   askBusy = false;
+}
+
+/** 시트를 닫을 때: 받던 풀이를 멈춘다(같은 점괘라 받은 부분은 남기고 '멈춤' 표시) */
+function abortAsk() {
+  if (askCtrl) askCtrl.abort();
 }
 
 function resetAsk() {
@@ -617,8 +624,15 @@ async function runAsk(question, preset) {
     },
   };
   if (intent) payload.intent = intent;
+  payload.stream = true; // 새 람다는 글이 오는 대로 NDJSON 으로 흘려 준다(예전 람다는 무시하고 JSON)
 
+  const turn = botP.parentElement;
+  turn.setAttribute('aria-busy', 'true');
+  const scroller = els.sheet.querySelector('.sheet-scroll');
+  const stale = () => gen !== askGen;
+  let shown = ''; // 화면에 보인 글(오류가 나도 남긴다)
   let outcome;
+
   try {
     const r = await fetch(ASK_ENDPOINT, {
       method: 'POST',
@@ -626,28 +640,123 @@ async function runAsk(question, preset) {
       body: JSON.stringify(payload),
       signal: ctrl.signal,
     });
-    const data = await r.json().catch(() => ({}));
-    outcome = r.ok && data.answer
-      ? { answer: data.answer }
-      : { error: data.error || '풀이를 받지 못했습니다. 잠시 뒤 다시 물어 주세요.' };
+    const ctype = (r.headers.get('content-type') || '').toLowerCase();
+    if (r.ok && r.body && ctype.includes('ndjson')) {
+      outcome = await readAskStream(r.body, {
+        stale,
+        onText: (full) => {
+          shown = full;
+          paintAnswer(turn, botP, full, scroller);
+        },
+      });
+    } else {
+      const data = await r.json().catch(() => ({}));
+      outcome = r.ok && data.answer
+        ? { answer: data.answer }
+        : { error: data.error || '풀이를 받지 못했습니다. 잠시 뒤 다시 물어 주세요.' };
+    }
   } catch (e) {
-    outcome = { error: '연결이 끊겼습니다. 네트워크를 확인한 뒤 다시 물어 주세요.', aborted: e && e.name === 'AbortError' };
+    outcome = e && e.name === 'AbortError'
+      ? { error: '풀이 받기를 멈췄습니다.', aborted: true }
+      : { error: '연결이 끊겼습니다. 네트워크를 확인한 뒤 다시 물어 주세요.' };
   }
   // 그 사이 새 점괘로 바뀌었으면 이 답은 버린다(기록·화면·버튼 모두 손대지 않음)
-  if (gen !== askGen) return;
+  if (stale() || outcome.stale) return;
   askBusy = false;
-  askCtrl = null;
+  if (askCtrl === ctrl) askCtrl = null;
   els.askSendBtn.disabled = false;
-  const turn = botP.parentElement;
-  turn.classList.remove('loading');
+  if (paintFrame) { cancelAnimationFrame(paintFrame); paintFrame = 0; }
+  turn.classList.remove('loading', 'streaming');
+  turn.removeAttribute('aria-busy');
   if (outcome.answer) {
     botP.textContent = outcome.answer;
     askHistory.push({ role: 'user', content: question });
     askHistory.push({ role: 'assistant', content: outcome.answer });
+    announce(outcome.answer);
   } else {
-    turn.classList.add('error');
-    botP.textContent = outcome.error;
+    // 받은 부분은 남기고 오류 표시를 덧붙인다
+    const partial = outcome.partial || shown;
+    if (partial) {
+      botP.textContent = partial;
+      const note = document.createElement('p');
+      note.className = 'ask-turn-note';
+      note.textContent = outcome.error;
+      turn.appendChild(note);
+      turn.classList.add('partial');
+    } else {
+      turn.classList.add('error');
+      botP.textContent = outcome.error;
+    }
+    announce(outcome.error);
   }
+}
+
+/**
+ * NDJSON 스트림 읽기: {"type":"start"} {"type":"delta","text"} … {"type":"done"} 또는 {"type":"error"}
+ * @returns {Promise<{answer?:string, error?:string, partial?:string, stale?:boolean}>}
+ */
+async function readAskStream(body, { stale, onText }) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let text = '';
+  const handle = (msg) => {
+    if (msg.type === 'delta' && typeof msg.text === 'string') {
+      text += msg.text;
+      onText(text);
+    } else if (msg.type === 'done') {
+      return text.trim() ? { answer: text.trim() } : { error: '빈 답을 받았습니다. 다시 물어 주세요.' };
+    } else if (msg.type === 'error') {
+      return { error: msg.error || '풀이를 받지 못했습니다. 잠시 뒤 다시 물어 주세요.', partial: text };
+    }
+    return null;
+  };
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (stale()) { reader.cancel().catch(() => {}); return { stale: true }; }
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (!line) continue;
+        let msg;
+        try { msg = JSON.parse(line); } catch { continue; }
+        const end = handle(msg);
+        if (end) { reader.cancel().catch(() => {}); return end; }
+      }
+    }
+  } catch (e) {
+    if (stale()) return { stale: true };
+    if (e && e.name === 'AbortError') return { error: '풀이 받기를 멈췄습니다.', partial: text, aborted: true };
+    return { error: '풀이를 받는 도중 연결이 끊겼습니다. 다시 물어 주세요.', partial: text };
+  }
+  return { error: '풀이를 받는 도중 연결이 끊겼습니다. 다시 물어 주세요.', partial: text };
+}
+
+/** 받은 글을 말풍선에 그린다. 읽느라 위로 올려 둔 사용자는 끌어내리지 않는다 */
+let paintFrame = 0;
+let paintArgs = null;
+function paintAnswer(turn, p, full, scroller) {
+  paintArgs = [turn, p, full, scroller];
+  if (paintFrame) return;
+  paintFrame = requestAnimationFrame(() => {
+    paintFrame = 0;
+    const [t, el, text, sc] = paintArgs;
+    const nearBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 96;
+    t.classList.remove('loading');
+    t.classList.add('streaming');
+    el.textContent = text;
+    if (nearBottom) sc.scrollTop = sc.scrollHeight;
+  });
+}
+
+/** 스크린 리더에는 다 받은 뒤 한 번만 알린다 */
+function announce(text) {
+  els.askLive.textContent = '';
+  requestAnimationFrame(() => { els.askLive.textContent = text; });
 }
 
 /* ---------------- 공유 ---------------- */

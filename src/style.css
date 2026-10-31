@@ -927,3 +927,21 @@ button:disabled { cursor: default; }
   }
   .mopt-face { min-height: 58px; }
 }
+
+/* 問占 스트리밍: 받는 중에는 끝에 붓끝 같은 커서, 도중에 멈추면 받은 글 아래 작은 안내 */
+.ask-turn.bot.streaming p::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: var(--gold-deep);
+  opacity: 0.6;
+  animation: glint 1s ease-in-out infinite;
+}
+.ask-turn.bot.partial { border-left-color: var(--seal); }
+.ask-turn-note { margin-top: 8px; font-size: var(--t-xs); color: var(--seal); }
+@media (prefers-reduced-motion: reduce) {
+  .ask-turn.bot.streaming p::after { animation: none; }
+}

@@ -3,6 +3,29 @@
 주역 점괘 결과 화면의 "問占 · 점괘에게 묻기"가 호출하는 LLM 프록시.
 클라이언트에 API 키를 노출하지 않기 위한 AWS Lambda(Function URL) 백엔드다.
 
+## 응답 스트리밍 (Function URL InvokeMode=RESPONSE_STREAM 필요)
+- 핸들러는 `awslambda.streamifyResponse` 로 감싸 있다(nodejs20.x 런타임 전역, 외부 의존성 없음).
+  **Function URL 의 InvokeMode 를 `RESPONSE_STREAM` 으로 바꿔야 한다.** BUFFERED 로 두면 스트리밍 응답의 상태·헤더가 제대로 나가지 않는다.
+  ```powershell
+  aws lambda update-function-url-config --function-name iching-ask --invoke-mode RESPONSE_STREAM --region ap-northeast-2
+  ```
+- 위쪽(Anthropic) 호출은 항상 `stream: true` 로 하고, SSE 를 직접 읽어 `text_delta` 만 쓴다(`thinking_delta`·`signature_delta` 는 버림).
+- 요청 본문에 **`stream: true` 가 있을 때만** NDJSON(`content-type: application/x-ndjson`)으로 흘려 보낸다.
+  ```
+  {"type":"start"}                         첫 바이트를 바로 보내 중간 버퍼링을 피한다
+  {"type":"delta","text":"…"}              글이 오는 대로
+  {"type":"done","stop_reason":"end_turn"} 정상 끝(글이 있는 max_tokens 는 stop_reason 만 max_tokens)
+  {"type":"error","error":"…"}             거절(refused: true)·빈 max_tokens(truncated: true)·빈 답·위쪽 도중 오류
+  ```
+  어떤 경우에도 마지막 줄을 쓰고 스트림을 닫는다. 사용자가 연결을 끊으면 위쪽 호출도 abort 한다.
+- **하위 호환**: `stream` 이 없으면(이전 사이트·구버전 클라이언트) 지금처럼 전체를 모아 JSON 한 번으로 답한다.
+  `{answer}` 200, 거절 200 `{error, refused}`, 빈 max_tokens 200 `{error, truncated}`, 빈 답·위쪽 도중 끊김 502 `{error}`.
+  RESPONSE_STREAM 모드에서도 이 JSON 은 `HttpResponseStream.from` 으로 상태·헤더를 지정해 그대로 나간다.
+- 검증 실패와 준비 단계 오류는 모두 **스트림을 열기 전에** 일반 JSON 상태 코드로 답한다:
+  OPTIONS 204(본문 없음), 403 origin, 415, 413, 400, 429 레이트리밋, 500 키 로드 실패, 위쪽 HTTP 오류(과부하 등) 502.
+  CORS 헤더(허용 origin 반향, `vary: origin`)는 모든 응답에 붙는다.
+- `awslambda` 전역이 없는 곳(로컬 실행)에서는 같은 로직을 일반 응답 객체로 돌려준다.
+
 ## 동작
 - `ask/index.mjs`: Anthropic Messages API 를 대신 호출. 기본 모델은 `claude-sonnet-5`(`LLM_MODEL` 로 바꿀 수 있음).
   - 요청: `thinking: {type: "adaptive"}`, `output_config: {effort: "low"}`, `max_tokens` 기본 2000
@@ -40,8 +63,10 @@ npm run sync:lambda   # → lambda/ask/data/hexagrams.mjs, yaoci.mjs, interpret.
 ```
 
 ## 단위 검증(외부 호출 없음)
-`.qa/lambda-test.mjs` 는 AWS SDK 와 Anthropic `fetch` 를 가짜로 바꿔 요청 본문 형태·origin·한도·재구성을 확인한다
-(`.qa` 는 커밋하지 않는 작업 폴더).
+- `.qa/lambda-test.mjs`: AWS SDK 와 Anthropic `fetch`(가짜 SSE) 로 요청 본문 형태·origin·한도·재구성을 확인(awslambda 없는 경로).
+- `.qa/lambda-stream-test.mjs`: 가짜 `awslambda`(streamifyResponse·HttpResponseStream) 로 스트리밍/비스트리밍 두 경로,
+  refusal·max_tokens·위쪽 도중 끊김·SSE error·403/415/413/400/429/OPTIONS/키 실패를 확인.
+- (`.qa` 는 커밋하지 않는 작업 폴더)
 
 ## 배포된 리소스 (account 476364780248 / ap-northeast-2)
 - Lambda: `iching-ask` (nodejs20.x, handler `index.handler`)
