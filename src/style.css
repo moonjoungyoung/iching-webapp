@@ -138,12 +138,11 @@ button:disabled { cursor: default; }
   --d-lines: 0.4s; --stagger: 0.2s; --t-line: 0.36s;
   --d-title: 1.6s; --t-title: 0.85s;
   --d-seal: 2.45s;
-  --d-cap: 2.5s;
 }
 [data-intro='none'] .intro { display: none; }
 [data-intro='short'] .intro {
   --t-ink: 0.5s; --d-lines: 0.05s; --stagger: 0.04s; --t-line: 0.22s;
-  --d-title: 0.25s; --t-title: 0.4s; --d-seal: 0.55s; --d-cap: 0.5s;
+  --d-title: 0.25s; --t-title: 0.4s; --d-seal: 0.55s;
 }
 
 /* 한지 층: 화면보다 훨씬 큰 정사각형을 0.3 배로 줄여 둔다(결 크기는 화면에서 384px 그대로).
@@ -179,7 +178,7 @@ button:disabled { cursor: default; }
   background: radial-gradient(120% 90% at 50% 46%, transparent 52%, rgba(92, 70, 40, 0.24) 100%);
 }
 .intro.is-leaving::before { animation: fade-out calc(var(--leave, 1200ms) * 0.3) ease forwards; }
-.intro-stage, .intro-caption, .intro-skip { z-index: 2; }
+.intro-stage, .intro-skip { z-index: 2; }
 
 .intro-stage {
   position: relative;
@@ -242,17 +241,6 @@ button:disabled { cursor: default; }
   100% { opacity: 1; transform: scale(1) rotate(-3deg); }
 }
 
-.intro-caption {
-  position: absolute;
-  left: 0; right: 0;
-  bottom: calc(76px + var(--safe-b));
-  text-align: center;
-  font-size: var(--t-sm);
-  letter-spacing: 0.24em;
-  color: var(--ink-2);
-  opacity: 0;
-  animation: fade-in 0.8s ease var(--d-cap) forwards;
-}
 @keyframes fade-in { to { opacity: 1; } }
 
 .intro-skip {
@@ -273,7 +261,7 @@ button:disabled { cursor: default; }
    같은 키프레임 보간으로 3D 카메라가 위에서 손 앞 시점으로 내려앉는다(stage.playEntrance). 글씨는 살짝 커지며 먼저 옅어진다. */
 .intro.is-leaving { pointer-events: none; }
 .intro.is-leaving .intro-stage { animation: recede calc(var(--leave, 1200ms) * 0.5) cubic-bezier(0.33, 1, 0.68, 1) forwards; }
-.intro.is-leaving .intro-caption, .intro.is-leaving .intro-skip { animation: fade-out calc(var(--leave, 1200ms) * 0.4) ease forwards; }
+.intro.is-leaving .intro-skip { animation: fade-out calc(var(--leave, 1200ms) * 0.4) ease forwards; }
 @keyframes recede { to { transform: translateY(-3vh) scale(1.12); opacity: 0; } }
 .intro.is-leaving.is-fast .intro-stage { animation-name: fade-out; }
 
@@ -282,8 +270,7 @@ button:disabled { cursor: default; }
 [data-intro='reduced'] .intro-ink { opacity: 0.9; }
 [data-intro='reduced'] .intro-lines .ln { stroke-dashoffset: 0; }
 [data-intro='reduced'] .intro-title { clip-path: none; }
-[data-intro='reduced'] .intro-seal, [data-intro='reduced'] .intro-caption { opacity: 1; transform: rotate(-3deg); }
-[data-intro='reduced'] .intro-caption { transform: none; }
+[data-intro='reduced'] .intro-seal { opacity: 1; transform: rotate(-3deg); }
 [data-intro='reduced'] .intro.is-leaving { animation: fade-out var(--leave, 300ms) ease forwards; }
 @keyframes fade-out { to { opacity: 0; } }
 
