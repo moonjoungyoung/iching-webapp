@@ -525,6 +525,56 @@ button:disabled { cursor: default; }
 .btn--ghost { background: transparent; }
 
 .throw-hint { text-align: center; font-size: var(--t-xs); letter-spacing: 0.04em; color: var(--mist); }
+
+/* 처음 쓸 때 안내(코치마크): 손 안 동전 바로 아래, 결과 알림 자리에 잠깐 */
+.coach {
+  grid-area: toast;
+  justify-self: center;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(360px, 100%);
+  padding: 10px 10px 10px 16px;
+  background: rgba(28, 21, 17, 0.92);
+  box-shadow: inset 0 0 0 1px var(--hair-dark), 0 10px 24px -12px rgba(0, 0, 0, 0.8);
+  border-radius: 2px;
+  pointer-events: auto;
+  animation: coach-in 0.5s var(--ease-out) both;
+}
+.coach[hidden] { display: none; }
+/* 위쪽(손 쪽)을 가리키는 작은 꼭짓점 */
+.coach::before {
+  content: '';
+  position: absolute;
+  left: 50%; top: -5px;
+  width: 9px; height: 9px;
+  background: rgba(28, 21, 17, 0.92);
+  box-shadow: inset 1px 1px 0 0 var(--hair-dark);
+  transform: translateX(-50%) rotate(45deg);
+}
+.coach-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; word-break: keep-all; }
+.coach-main { font-size: 0.875rem; line-height: 1.4; color: var(--hanji); }
+.coach-sub { font-size: var(--t-xs); line-height: 1.4; color: var(--mist); }
+.coach-sub[hidden] { display: none; }
+.coach-btn {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: var(--t-sm);
+  letter-spacing: 0.02em;
+  color: var(--gold-2);
+  background: transparent;
+  border: 0;
+  box-shadow: inset 0 0 0 1px rgba(201, 166, 94, 0.45);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.coach-btn:hover { box-shadow: inset 0 0 0 1px var(--gold); color: var(--hanji); }
+@keyframes coach-in { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .coach { animation: none; } }
 .throw-guide { grid-area: guide; text-align: center; font-size: 0.875rem; line-height: 1.5; letter-spacing: 0.02em; color: var(--hanji-2); word-break: keep-all; }
 .btn--throw { gap: 12px; padding: 0 14px; white-space: nowrap; }
 .throw-step { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 0 0 auto; line-height: 1; }
@@ -793,6 +843,8 @@ button:disabled { cursor: default; }
   .yao-name, .yao-mark { font-size: 13px; }
   .coin-dot { width: 30px; height: 30px; font-size: 14px; }
   .throw-hint { font-size: var(--t-sm); }
+  /* 넓은 화면의 안내 카드는 던지기 자리(오른쪽 아래)에 있어 손을 가리키는 꼭짓점을 두지 않는다 */
+  .coach::before { display: none; }
 
 
   .sheet {

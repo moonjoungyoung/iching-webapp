@@ -6,8 +6,27 @@
   <meta name="theme-color" content="#120d0a">
   <meta name="description" content="동전 세 닢을 여섯 번 던져 주역의 괘를 얻고, 본괘·지괘·점단으로 풀이를 읽습니다.">
   <title>주역 동전점 · 周易占</title>
+  <link rel="canonical" href="https://d3hvx0sm85rmzt.cloudfront.net/">
+  <!-- 공유 썸네일(카카오톡·슬랙·페이스북·X). 이미지는 scripts/og/render-og.cjs 로 다시 만든다 -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="주역 동전점">
+  <meta property="og:locale" content="ko_KR">
+  <meta property="og:url" content="https://d3hvx0sm85rmzt.cloudfront.net/">
+  <meta property="og:title" content="주역 동전점 · 周易占">
+  <meta property="og:description" content="마음에 물음을 품고 동전 세 닢을 여섯 번 던져 주역의 괘를 얻고, 본괘·지괘·점단으로 풀이를 읽습니다.">
+  <meta property="og:image" content="https://d3hvx0sm85rmzt.cloudfront.net/og-image.jpg">
+  <meta property="og:image:secure_url" content="https://d3hvx0sm85rmzt.cloudfront.net/og-image.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="한지 위 먹으로 그은 여섯 효와 周易 붓글씨, 占 인장">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="주역 동전점 · 周易占">
+  <meta name="twitter:description" content="마음에 물음을 품고 동전 세 닢을 여섯 번 던져 주역의 괘를 얻습니다.">
+  <meta name="twitter:image" content="https://d3hvx0sm85rmzt.cloudfront.net/og-image.jpg">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="preload" href="/src/assets/fonts/bakudai-subset.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -100,6 +119,7 @@
         <button id="sound-btn" class="menu-item" type="button" role="menuitemcheckbox" aria-checked="true">동전 소리<span class="menu-state" aria-hidden="true"></span></button>
         <button id="shake-toggle" class="menu-item" type="button" role="menuitemcheckbox" aria-checked="true" hidden>폰 흔들어 던지기<span class="menu-state" aria-hidden="true"></span></button>
         <button id="motion-allow" class="menu-item" type="button" role="menuitem" hidden>폰 흔들어 던지기 켜기<span class="menu-state"></span></button>
+        <button id="menu-coach" class="menu-item" type="button" role="menuitem">던지는 법</button>
         <button id="menu-manual" class="menu-item" type="button" role="menuitem">효 직접 고르기</button>
         <button id="info-open" class="menu-item" type="button" role="menuitem" aria-haspopup="dialog" aria-controls="info-panel"><span class="hanja" aria-hidden="true">占法</span> 점괘 보는 법</button>
       </div>
@@ -115,6 +135,11 @@
     </div>
     <div class="hud-bottom">
       <div id="coin-toast" class="coin-toast" role="status" aria-live="polite"></div>
+      <!-- 처음 쓸 때 한 번: 던지는 법 안내(첫 던지기에 사라진다. 메뉴의 '던지는 법'으로 다시 볼 수 있다) -->
+      <div id="coach" class="coach" role="group" aria-label="던지는 법" hidden>
+        <p class="coach-text"><span class="coach-main"></span><span class="coach-sub"></span></p>
+        <button id="coach-ok" class="coach-btn" type="button">알겠어요</button>
+      </div>
       <p class="throw-guide">그 물음을 마음에 깊이 품고 여섯 번 던지세요</p>
       <ol id="ladder" class="ladder" aria-label="괘를 세우는 여섯 효"></ol>
       <div class="hud-actions">

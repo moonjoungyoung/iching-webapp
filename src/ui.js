@@ -29,6 +29,12 @@ const els = {
   askLine: $('#hud .ask-line'),
   throwSub: $('#throw-btn .throw-sub'),
   menuManual: $('#menu-manual'),
+  menuCoach: $('#menu-coach'),
+  coach: $('#coach'),
+  coachMain: $('#coach .coach-main'),
+  coachSub: $('#coach .coach-sub'),
+  coachText: $('#coach .coach-text'),
+  coachOk: $('#coach-ok'),
   infoOpen: $('#info-open'),
   qInput: $('#question-input'),
   hud: $('#hud'),
@@ -317,6 +323,33 @@ export function setThrowState(s) {
   else if (s.retry) els.throwHint.textContent = '동전이 자리를 잡지 못했습니다. 이 효를 다시 던져 주세요.';
   else if (s.noStage) els.throwHint.textContent = '3D 판을 열 수 없어 판 없이 던집니다';
   else els.throwHint.textContent = '';
+}
+
+/* ---------------- 처음 쓸 때 안내(코치마크) ---------------- */
+
+const COACH_TEXT = {
+  // 모션 센서가 있는 터치 폰(권한이 필요하면 'shake-ask': 확인 버튼 누름 안에서 권한을 묻는다)
+  shake: { main: '폰을 흔들다 탁 털면 던져집니다', sub: '버튼을 눌러도 됩니다', btn: '알겠어요' },
+  'shake-ask': { main: '폰을 흔들다 탁 털면 던져집니다', sub: '버튼을 눌러도 됩니다', btn: '흔들어 볼게요' },
+  button: { main: '버튼을 누르고 있다 놓으면 던져집니다', sub: '', btn: '알겠어요' },
+};
+
+/**
+ * 던지는 법 안내 카드. mode 가 null 이면 숨긴다. 초점은 옮기지 않고, 처음 띄울 때 한 번만 읽어 준다
+ * (이미 떠 있는 카드의 문구가 바뀔 때는 다시 읽지 않는다).
+ * @param {'shake'|'shake-ask'|'button'|null} mode
+ */
+export function setCoach(mode) {
+  const c = COACH_TEXT[mode];
+  if (!c) { els.coach.hidden = true; return; }
+  const appearing = els.coach.hidden;
+  els.coachText.setAttribute('aria-live', appearing ? 'polite' : 'off');
+  // 숨김을 먼저 풀어야 새로 넣은 문구가 알림으로 읽힌다
+  els.coach.hidden = false;
+  els.coachMain.textContent = c.main;
+  els.coachSub.textContent = c.sub;
+  els.coachSub.hidden = !c.sub;
+  els.coachOk.textContent = c.btn;
 }
 
 export function focusThrow() {
@@ -845,6 +878,9 @@ export function initUI(h) {
   });
   // 메뉴에서 연 창을 닫으면 초점이 (숨은 메뉴 항목이 아니라) 메뉴 단추로 돌아오도록, 먼저 메뉴 단추로 초점을 옮긴 뒤 연다
   els.menuManual.addEventListener('click', () => { closeMenu(); h.onManual(); });
+  els.menuCoach.addEventListener('click', () => { closeMenu(); h.onCoachShow(); });
+  // 안내 카드의 확인 버튼: iOS 는 이 누름 안에서 동작 권한을 묻는다(main 이 판단)
+  els.coachOk.addEventListener('click', () => h.onCoachOk());
   els.infoOpen.addEventListener('click', () => { closeMenu(); openInfo(); });
   // iOS: 메뉴 클릭은 사용자 활성화가 있으므로 여기서 다시 권한을 물을 수 있다
   els.motionAllow.addEventListener('click', () => { if (h.onMotionAllow) h.onMotionAllow(); });

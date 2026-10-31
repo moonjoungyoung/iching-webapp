@@ -20,7 +20,7 @@ const KEY_PARAM = process.env.LLM_KEY_PARAM || '/copilot/jober-chat/production/s
 const MODEL = process.env.LLM_MODEL || 'claude-sonnet-5';
 // 허용 origin 목록(쉼표 구분). Origin 헤더가 있는데 목록에 없으면 403.
 // 목록에 있으면 그 값을 돌려주고, Origin 헤더가 없는 요청(서버 간 호출 등)은 첫 항목을 돌려준다.
-const ALLOW_ORIGINS = (process.env.ALLOW_ORIGIN || 'https://d1vry20p02uvjx.cloudfront.net,https://d3lce34aee1gcj.cloudfront.net')
+const ALLOW_ORIGINS = (process.env.ALLOW_ORIGIN || 'https://d3hvx0sm85rmzt.cloudfront.net,https://d1vry20p02uvjx.cloudfront.net')
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);

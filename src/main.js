@@ -3,7 +3,7 @@ import { runIntro } from './intro.js';
 import {
   initUI, showTopbar, showHud, updateLadder, setThrowState, focusThrow, focusViewResult,
   showCoinToast, clearCoinToast, resetHud, showResult, prepareResult, dismissResultForNewReading,
-  getLastResult, setMotionAvailable, isShakeEnabled, setCharge, anyOverlayOpen, onOverlayChange, setMotionPermission,
+  getLastResult, setMotionAvailable, isShakeEnabled, setCharge, anyOverlayOpen, onOverlayChange, setMotionPermission, setCoach,
 } from './ui.js';
 import { initManual, openManual } from './manual.js';
 import { createShake } from './shake.js';
@@ -134,6 +134,7 @@ async function onThrow(opts = {}, how = {}) {
   const useStage = physicsOk && !how.noStage;
   if (!useStage && !stageFailed && !how.noStage) return; // 아직 판을 펴는 중
   unlockAudio();
+  hideCoach(); // 첫 던지기(흔들기든 버튼이든)에 안내를 거둔다
   rolling = true;
   holding = false;
   retryShown = false;
@@ -227,6 +228,7 @@ function onNewReading() {
   // 던지기 화면으로 바로 돌아온다. 질문 칸은 이전 값 그대로
   startThrowing();
   focusThrow();
+  maybeShowCoach();
 }
 
 /** 직접 고른 여섯 효로 괘를 세운다. 던지기와 같은 결과 경로를 탄다 */
@@ -436,7 +438,7 @@ const shake = createShake({
   canUse: () => inThrowPhase && isShakeEnabled() && !rolling && physicsOk && state.phase === 'ready' && now() >= shakeQuietUntil
     && !anyOverlayOpen() && !document.hidden
     && !/TEXTAREA|INPUT/.test(document.activeElement ? document.activeElement.tagName : ''),
-  onAvailable: () => setMotionAvailable(true),
+  onAvailable: () => { setMotionAvailable(true); syncCoach(); },
   onCharge: (e) => setCharge(e),
   onSample: (ax, ay, az) => {
     if (!stage) return;
@@ -476,7 +478,52 @@ function askMotionPermission(fromMenu = false) {
     else if (r === 'denied') motionPerm = 'denied';
     // 'error' 는 그대로 둔다('prompt' 면 다음 탭에서 다시 묻는다)
     setMotionPermission(motionPerm, fromMenu && r === 'denied');
+    syncCoach();
   });
+}
+
+/* ---------------- 처음 쓸 때 안내(코치마크) ----------------
+ * 첫 방문에 던지기 화면이 처음 뜨면 손 안 동전 아래에 짧은 카드를 띄운다. 첫 던지기(흔들기든 버튼이든)나
+ * [알겠어요]로 사라지고, 이후 방문에는 띄우지 않는다(메뉴의 '던지는 법'으로 다시 볼 수 있다).
+ *  - 모션 센서가 있는 터치 폰: 흔들어 털기 안내. iOS 처럼 권한이 필요하면 카드의 [흔들어 볼게요] 누름 안에서 묻는다
+ *  - 그 외(데스크톱·센서 없음·거부·흔들기 끔): 누르고 있다 놓기 안내
+ */
+const COACH_KEY = 'iching.coach';
+let coachMode = null;
+const coachSeen = () => { try { return localStorage.getItem(COACH_KEY) === '1'; } catch (e) { return false; } };
+
+function pickCoachMode() {
+  const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+  if (!touch || !isShakeEnabled() || motionPerm === 'denied') return 'button';
+  if (motionPerm === 'prompt') return 'shake-ask';
+  // 권한을 받았거나(iOS) 가속도가 실제로 들어오는 기기(안드로이드)
+  return shake.available || shake.needsPermission ? 'shake' : 'button';
+}
+function showCoach() {
+  coachMode = pickCoachMode();
+  setCoach(coachMode);
+}
+function maybeShowCoach() {
+  if (coachSeen() || !inThrowPhase || manualReading || state.phase !== 'ready' || state.currentThrow > 0) return;
+  showCoach();
+}
+/** 권한·센서 상태가 바뀌면 떠 있는 카드의 문구를 맞춘다 */
+function syncCoach() {
+  if (!coachMode) return;
+  const m = pickCoachMode();
+  if (m !== coachMode) { coachMode = m; setCoach(m); }
+}
+function hideCoach() {
+  if (!coachMode) return;
+  coachMode = null;
+  setCoach(null);
+  try { localStorage.setItem(COACH_KEY, '1'); } catch (e) { /* 저장소 차단 */ }
+}
+function onCoachOk() {
+  unlockAudio();
+  // iOS: 이 누름(사용자 활성화) 안에서 동기로 권한을 묻는다. 결과에 따라 카드 문구가 바뀐다(syncCoach)
+  if (coachMode === 'shake-ask') { askMotionPermission(); return; }
+  hideCoach();
 }
 
 initUI({
@@ -485,6 +532,8 @@ initUI({
   onNewReading,
   onViewResult: () => { const r = getLastResult(); if (r) showResult(r); },
   onMotionAllow: () => askMotionPermission(true),
+  onCoachOk,
+  onCoachShow: () => { clearCoinToast(); showCoach(); },
 });
 initManual({ onSubmit: onManualSubmit });
 
@@ -539,9 +588,20 @@ if (!openFromLink()) {
       // 준비가 제한 시간 안에 끝난 정상 경로만 카메라 진입을 전환과 함께 돌린다.
       // 늦게 준비된 장면은 따로 진입시키지 않고 최종 카메라 자리(createStage 의 기본 구도)에 바로 둔다
       if (ready && stage) stage.playEntrance({ dur: reduced ? 0 : dur, ease });
-      later(() => focusThrow(), dur);
+      later(() => { focusThrow(); maybeShowCoach(); }, dur);
     },
   });
+  // 인트로를 탭해 넘길 때 그 탭(사용자 활성화) 안에서 소리를 열고, iOS 는 동작 권한도 함께 묻는다.
+  // 그러면 안내 카드를 누르지 않고 흔들기만으로 첫 던지기를 할 수 있다
+  const onIntroTap = (e) => {
+    const intro = document.getElementById('intro');
+    if (!intro) { window.removeEventListener('pointerup', onIntroTap, true); return; }
+    if (e.pointerType === 'mouse' || !intro.contains(e.target)) return;
+    window.removeEventListener('pointerup', onIntroTap, true);
+    unlockAudio();
+    askMotionPermission();
+  };
+  window.addEventListener('pointerup', onIntroTap, true);
 } else {
   const intro = document.getElementById('intro');
   if (intro) intro.remove();

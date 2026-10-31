@@ -21,7 +21,8 @@ export async function createStage(canvas, rapierModule) {
   const { renderer, scene, camera } = s;
   let view = s.view;
 
-  const meshes = await createCoinMeshes(scene, renderer.capabilities.getMaxAnisotropy() > 4 ? 4 : 2);
+  // 비스듬히 누운 동전 글자가 흐려지지 않게 비등방 필터를 기기 최대(16 이하)로
+  const meshes = await createCoinMeshes(scene, Math.min(16, renderer.capabilities.getMaxAnisotropy()));
   // 물리가 준비되기 전에도 손 안에 쥔 모양으로 보여 준다
   meshes.forEach((m, i) => {
     const C = PHYS.cup;

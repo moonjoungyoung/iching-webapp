@@ -37,7 +37,7 @@
 - API 키는 **jober-chat 운영 SSM 파라미터를 런타임에 읽는다**:
   `/copilot/jober-chat/production/secrets/LLM_API_KEY` (복사·하드코딩·로깅하지 않음).
 - Origin 검사: `ALLOW_ORIGIN` 환경변수(쉼표 구분 목록). 기본값
-  `https://d1vry20p02uvjx.cloudfront.net,https://d3lce34aee1gcj.cloudfront.net`.
+  `https://d3hvx0sm85rmzt.cloudfront.net,https://d1vry20p02uvjx.cloudfront.net`.
   - `Origin` 헤더가 있는데 목록에 없으면 **어떤 처리(레이트리밋·LLM 호출)도 하기 전에 403**(OPTIONS 포함).
   - 목록에 있으면 그 값을 `access-control-allow-origin` 으로 돌려준다(`vary: origin`).
   - `Origin` 헤더가 없는 요청(서버 간 호출 등)은 예전처럼 처리하고 첫 항목을 돌려준다(레이트리밋은 그대로).

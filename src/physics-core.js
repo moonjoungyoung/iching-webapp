@@ -4,9 +4,10 @@
 //
 // 크기와 시간: 동전 반경 0.5 단위 = 실제 엽전 약 12mm 로 본다(1 단위 = 24mm).
 //   실제 중력 9.81 m/s² = 9.81 / 0.024 = 408.75 단위/s².
-//   실제 속도 그대로면 손에서 판까지 0.25초 남짓에 끝나 눈으로 따라가기 어렵고, 초당 20회 넘는 뒤집힘은 화면에서 끊겨 보인다.
-//   그래서 모든 움직임을 0.65배 느리게 보여 준다(일관된 시간 배율). 중력 = 408.75 × 0.65² ≈ 172.7.
-//   이 값에서 손에서 판까지 비행은 약 0.4~0.6초, 뒤집힘은 초당 5~10회로 보인다.
+//   실제 속도 그대로면 손에서 판까지 0.35초 남짓에 끝나 눈으로 따라가기 어렵고 착지·튐이 한순간에 지나간다.
+//   그래서 모든 움직임을 0.6배 느리게 보여 준다(일관된 시간 배율). 중력 = 408.75 × 0.6² ≈ 147.2.
+//   손에서 판까지 비행은 화면에서 약 0.7~0.8초(정점은 판 위 약 28cm, 판에 닿는 속도는 실제 약 2.2m/s),
+//   뒤집힘은 초당 2~5회로 보인다.
 
 export const COIN_RADIUS = 0.5;
 export const COIN_THICKNESS = 0.12;
@@ -14,17 +15,20 @@ const COIN_BORDER = 0.022; // 둥근 모서리(라운드 실린더) 반경: 테�
 
 export const UNIT_METERS = 0.024;
 export const REAL_G = 9.81 / UNIT_METERS; // 408.75 단위/s²
-export const TIME_FACTOR = 0.65; //          화면 속 시간 배율(1 = 실제 속도)
+export const TIME_FACTOR = 0.6; //          화면 속 시간 배율(1 = 실제 속도)
 
 export const PHYS = {
-  gravity: -REAL_G * TIME_FACTOR * TIME_FACTOR, // ≈ -172.7
+  gravity: -REAL_G * TIME_FACTOR * TIME_FACTOR,
   dt: 1 / 240, //        고정 시간 간격(빠른 동전·얇은 두께에 맞춰 촘촘히)
   solverIterations: 8,
-  contactHz: 13, //      접촉 강성: 중력이 커진 만큼 단단하게(가라앉음 ≈ g/ω² ≈ 0.026)
+  contactHz: 20, //      접촉 강성: 무른 접촉이 눌렸다 되밀며 통통 튀지 않게(가라앉음 ≈ g/ω² ≈ 0.01 단위)
   // 점판: 평평한 바닥 반경, 비스듬한 턱(바깥 반경·각도), 운두 반경, 보이지 않는 안전벽 높이
-  tray: { flatRadius: 2.7, bevelOuter: 3.25, bevelAngle: 0.61, bevelFriction: 0.14, wallRadius: 3.45, wallTop: 9, segments: 72 },
-  coin: { density: 8.9, friction: 0.3, restitution: 0.36 },
-  table: { friction: 0.5, restitution: 0.3 },
+  tray: { flatRadius: 2.7, bevelOuter: 3.25, bevelAngle: 0.61, bevelFriction: 0.22, wallRadius: 3.45, wallTop: 9, segments: 72 },
+  // 마찰·반발. 판·손 충돌체는 Min 결합 규칙이라 그 값이 곧 동전과 맞닿을 때의 값이고, coin 값은 동전끼리의 값이다
+  // (그래서 coin 값은 판·손 값보다 작지 않게 둔다).
+  //  동전끼리(청동-청동): 금속끼리라 조금 더 튄다. 동전-판(청동-옻칠 나무): 옻칠 표면에 눌려 반발이 작고 미끄럽다
+  coin: { density: 8.9, friction: 0.35, restitution: 0.4 },
+  table: { friction: 0.3, restitution: 0.18 },
   // 손(모아 쥔 두 손): 판 바로 앞, 보는 사람 쪽 공중의 보이지 않는 그릇.
   // 판 운두(반경 3.45) 바깥이라 화면에서 판과 겹치지 않고 판 아래쪽(손 자리)에 보인다
   cup: {
@@ -34,16 +38,16 @@ export const PHYS = {
     floorY: -0.55, //      그릇 안쪽 바닥(로컬)
     lidY: 0.85, //         그릇 안쪽 뚜껑(로컬)
     walls: 14,
-    friction: 0.35,
-    restitution: 0.25,
+    friction: 0.32,
+    restitution: 0.3,
     maxOffset: { x: 0.85, y: 0.6, z: 0.6 }, // 흔들기 진폭 한계(사람 손은 3~5cm 폭으로 흔든다)
   },
   linearDamping: 0.03, //  공기 저항(작게)
   angularDamping: 0.08,
   // 바닥에 닿아 구르거나 흔들릴 때의 저항(구름 마찰 근사)
-  groundLinearDamping: 1.4,
-  groundAngularDamping: 2.2,
-  rollingResistance: 14,
+  groundLinearDamping: 0.8,
+  groundAngularDamping: 0.9,
+  rollingResistance: 6,
   // 안정 판정(속도는 이 크기·시간 배율에 맞춘 값)
   stillLin: 0.18,
   stillAng: 0.55,
@@ -53,6 +57,10 @@ export const PHYS = {
   calmTime: 0.25,
   calmDamping: 30,
   calmSettle: 0.55,
+  // 자리 고정: 바닥 가까이 평평하게 누운 채 자리가 이 반경(단위) 안에서 이 시간 넘게 머물면 멈춘 것으로 본다.
+  // 다른 동전 가장자리에 걸쳐 누운 동전은 접촉 떨림으로 속도가 튀어 위 두 조건을 못 채울 수 있다
+  pinRadius: 0.03,
+  pinTime: 0.8,
   tiltLin: 0.38, //        이보다 느리게 기울어 멈춰 있으면 넛지
   tiltTime: 0.3,
   flatUp: 0.8, //          |up.y| 가 이 이상이면 면으로 누운 것
@@ -61,8 +69,9 @@ export const PHYS = {
   giveUpTime: 10, //       그래도 착지·저속·평평 조건을 못 채우면 이 효는 기록하지 않고 다시 던진다
   soundForceThreshold: 260,
   // 던지기: 손에서 판까지 비행 시간(초)과 판 위 목표 반경
-  flight: { minT: 0.4, maxT: 0.52, landY: 0.45, centerZ: -0.25, spread: [0.45, 1.2] },
-  flipRps: [5, 10], //     공중 뒤집힘(초당 회전 수)
+  // spread: 동전마다 목표점을 무리 중심에서 벌리는 반경(서로 같은 자리에 떨어져 튕겨 나가지 않게)
+  flight: { minT: 0.6, maxT: 0.78, landY: 0.45, centerZ: -0.25, spread: [0.7, 1.25] },
+  flipRps: [2, 4.5], //    공중 뒤집힘(화면 기준 초당 회전 수). 모아 쥔 손에서 던진 엽전은 엄지로 튕긴 것보다 훨씬 느리게 돈다
 };
 
 // 충돌 그룹(위 16비트 = 소속, 아래 16비트 = 상대 필터)
@@ -187,23 +196,24 @@ export function createCoinWorld(RAPIER) {
   // 턱이 비스듬하고 미끄러워 동전이 기대 서지 않고 바닥으로 내려온다.
   const tray = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
   const prof = trayProfile();
+  // 판·손 충돌체는 Min 규칙: 그 값이 곧 동전과 맞닿을 때의 값이다(동전끼리는 동전 값)
+  const MIN = RAPIER.CoefficientCombineRule.Min;
+  const surface = (d, friction, restitution) => d
+    .setFriction(friction).setRestitution(restitution).setFrictionCombineRule(MIN).setRestitutionCombineRule(MIN);
   world.createCollider(
-    RAPIER.ColliderDesc.trimesh(...latheMesh(prof.slice(0, 3)), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
-      .setFriction(PHYS.table.friction)
-      .setRestitution(PHYS.table.restitution),
+    surface(RAPIER.ColliderDesc.trimesh(...latheMesh(prof.slice(0, 3)), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES),
+      PHYS.table.friction, PHYS.table.restitution),
     tray,
   );
   world.createCollider(
-    RAPIER.ColliderDesc.trimesh(...latheMesh(prof.slice(2, 5)), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
-      .setFriction(PHYS.tray.bevelFriction)
-      .setRestitution(PHYS.table.restitution),
+    surface(RAPIER.ColliderDesc.trimesh(...latheMesh(prof.slice(2, 5)), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES),
+      PHYS.tray.bevelFriction, PHYS.table.restitution),
     tray,
   );
   // 운두 위 보이지 않는 벽: 손이 판 바깥(앞쪽)에 있으므로, 동전이 판 안으로 들어온 뒤에만 막는다(충돌 그룹)
   world.createCollider(
-    RAPIER.ColliderDesc.trimesh(...latheMesh(prof.slice(4)), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
-      .setFriction(PHYS.tray.bevelFriction)
-      .setRestitution(PHYS.table.restitution)
+    surface(RAPIER.ColliderDesc.trimesh(...latheMesh(prof.slice(4)), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES),
+      PHYS.tray.bevelFriction, PHYS.table.restitution)
       .setCollisionGroups(GROUP_WALL),
     tray,
   );
@@ -217,7 +227,7 @@ export function createCoinWorld(RAPIER) {
   );
   const cupColliders = [];
   const cupDesc = (d) => {
-    const col = world.createCollider(d.setFriction(C.friction).setRestitution(C.restitution), cupBody);
+    const col = world.createCollider(surface(d, C.friction, C.restitution), cupBody);
     cupColliders.push(col);
     return col;
   };
@@ -268,7 +278,7 @@ export function createCoinWorld(RAPIER) {
         .setCollisionGroups(GROUP_COIN_HAND),
       body,
     );
-    coins.push({ body, still: 0, tilt: 0, calm: 0, nudges: 0, edgeEvents: 0, inside: false });
+    coins.push({ body, still: 0, tilt: 0, calm: 0, nudges: 0, edgeEvents: 0, inside: false, pin: null, pinT: 0 });
   }
 
   // retryReason: 'outside'(판 밖) | 'timeout'(제한 시간). handRegathers: 손 안에서 빠져나가 다시 모은 횟수(검증용)
@@ -346,7 +356,7 @@ export function createCoinWorld(RAPIER) {
       c.body.setRotation(L[i].q, true);
       c.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
       c.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-      c.still = 0; c.tilt = 0; c.calm = 0; c.nudges = 0; c.edgeEvents = 0;
+      c.still = 0; c.tilt = 0; c.calm = 0; c.nudges = 0; c.edgeEvents = 0; c.pin = null; c.pinT = 0;
       c.inside = false;
       c.body.collider(0).setCollisionGroups(GROUP_COIN_HAND);
     });
@@ -419,7 +429,7 @@ export function createCoinWorld(RAPIER) {
       const rps = PHYS.flipRps[0] + rng() * (PHYS.flipRps[1] - PHYS.flipRps[0]) + power * 1.5;
       const w = (rng() < 0.5 ? -1 : 1) * rps * Math.PI * 2;
       b.setAngvel({ x: dz * w + (rng() - 0.5) * 8, y: (rng() - 0.5) * 6, z: -dx * w + (rng() - 0.5) * 8 }, true);
-      c.still = 0; c.tilt = 0; c.calm = 0; c.nudges = 0; c.edgeEvents = 0;
+      c.still = 0; c.tilt = 0; c.calm = 0; c.nudges = 0; c.edgeEvents = 0; c.pin = null; c.pinT = 0;
       c.inside = false;
       c.deferT = 0;
       b.collider(0).setCollisionGroups(GROUP_COIN_FLIGHT);
@@ -508,8 +518,11 @@ export function createCoinWorld(RAPIER) {
       // 모서리로 서 있거나 턱·다른 동전에 기대 멈춘 상태(기울어진 채 거의 안 움직임)
       if (Math.abs(uy) < PHYS.flatUp && lv < PHYS.tiltLin && b.translation().y < 1.2) c.tilt += PHYS.dt; else c.tilt = 0;
       if (c.tilt > PHYS.tiltTime) nudge(c, uy, rng);
-      // 판정은 오직 착지·저속·평평: 완전히 멈췄거나, 바닥에 누운 채 미세 떨림만 충분히 이어졌을 때
-      const rested = c.still >= PHYS.stillTime || c.calm >= PHYS.calmSettle;
+      // 판정은 오직 착지·저속·평평: 완전히 멈췄거나, 바닥에 누운 채 미세 떨림만 충분히 이어졌거나, 누운 자리에 머물 때
+      // 자리 고정: 평평하게 누운 채 자리를 거의 벗어나지 않으면(속도가 떨려도) 시간을 센다
+      if (grounded && Math.abs(uy) >= PHYS.flatUp && c.pin && Math.hypot(pos.x - c.pin.x, pos.y - c.pin.y, pos.z - c.pin.z) < PHYS.pinRadius) c.pinT += PHYS.dt;
+      else { c.pin = { x: pos.x, y: pos.y, z: pos.z }; c.pinT = 0; }
+      const rested = c.still >= PHYS.stillTime || c.calm >= PHYS.calmSettle || c.pinT >= PHYS.pinTime;
       if (!(rested && Math.abs(uy) >= PHYS.flatUp)) allStill = false;
     }
 
