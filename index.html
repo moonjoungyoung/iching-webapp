@@ -3,141 +3,303 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>주역 - 동전점법</title>
+  <meta name="theme-color" content="#120d0a">
+  <meta name="description" content="동전 세 닢을 여섯 번 던져 주역의 괘를 얻고, 본괘·지괘·점단으로 풀이를 읽습니다.">
+  <title>주역 동전점 · 周易占</title>
+  <link rel="canonical" href="https://d3hvx0sm85rmzt.cloudfront.net/">
+  <!-- 공유 썸네일(카카오톡·슬랙·페이스북·X). 이미지는 scripts/og/render-og.cjs 로 다시 만든다 -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="주역 동전점">
+  <meta property="og:locale" content="ko_KR">
+  <meta property="og:url" content="https://d3hvx0sm85rmzt.cloudfront.net/">
+  <meta property="og:title" content="주역 동전점 · 周易占">
+  <meta property="og:description" content="마음에 물음을 품고 동전 세 닢을 여섯 번 던져 주역의 괘를 얻고, 본괘·지괘·점단으로 풀이를 읽습니다.">
+  <meta property="og:image" content="https://d3hvx0sm85rmzt.cloudfront.net/og-image.jpg">
+  <meta property="og:image:secure_url" content="https://d3hvx0sm85rmzt.cloudfront.net/og-image.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="한지 위 먹으로 그은 여섯 효와 周易 붓글씨, 占 인장">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="주역 동전점 · 周易占">
+  <meta name="twitter:description" content="마음에 물음을 품고 동전 세 닢을 여섯 번 던져 주역의 괘를 얻습니다.">
+  <meta name="twitter:image" content="https://d3hvx0sm85rmzt.cloudfront.net/og-image.jpg">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preload" href="/src/assets/fonts/bakudai-subset.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Hahmlet:wght@400;500;700;900&family=Noto+Serif+KR:wght@400;700&family=Song+Myung&display=swap" rel="stylesheet">
+  <!-- 한글 본문 글꼴은 첫 페인트를 막지 않도록 비동기로 붙인다(인트로가 곧바로 시작되게) -->
+  <link href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@300;400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@300;400;600&display=swap" rel="stylesheet"></noscript>
   <style>
-    /* 크리티컬 CSS — FOUC 방지 */
-    *{margin:0;padding:0;box-sizing:border-box}
-    body{background:#0c0c0c;overflow:hidden}
-    #scene,#ui-overlay,#result-modal{opacity:0}
-    #loading-screen{position:fixed;inset:0;z-index:9999;background:#0c0c0c;display:flex;align-items:center;justify-content:center}
-    .loading-char{font-family:serif;font-size:3rem;color:#a07818;animation:p 1.5s ease-in-out infinite}
-    @keyframes p{0%,100%{opacity:.3}50%{opacity:1}}
+    /* 첫 페인트 전 깜빡임 방지: 배경색만 */
+    html,body{margin:0;background:#120d0a}
   </style>
+  <script>
+    // 인트로 모드: 첫 방문 full, 같은 세션 재방문 short, 공유 링크(?hex=) none, 동작 줄이기 reduced
+    (function () {
+      var d = document.documentElement, m = 'full';
+      try {
+        if (/[?&]hex=\d/.test(location.search)) m = 'none';
+        else if (sessionStorage.getItem('iching.intro')) m = 'short';
+        sessionStorage.setItem('iching.intro', '1');
+      } catch (e) {}
+      if (m !== 'none' && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) m = 'reduced';
+      d.setAttribute('data-intro', m);
+    })();
+  </script>
 </head>
 <body>
-  <div id="loading-screen">
-    <p class="loading-char">卦</p>
-  </div>
-  <canvas id="scene"></canvas>
+  <h1 class="sr-only">주역 동전점</h1>
+  <!-- 공용 SVG 필터: 붓 결, 먹 번짐, 인장 찍힘 -->
+  <svg class="svg-defs" aria-hidden="true" focusable="false" width="0" height="0">
+    <defs>
+      <filter id="f-brush" x="-4%" y="-40%" width="108%" height="180%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.03 0.55" numOctaves="2" seed="7" result="n"/>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="6" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <filter id="f-bleed" x="-60%" y="-60%" width="220%" height="220%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="3" result="n"/>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="34" xChannelSelector="R" yChannelSelector="B"/>
+        <feGaussianBlur stdDeviation="2"/>
+      </filter>
+      <filter id="f-stamp" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="2" seed="11" result="n"/>
+        <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -3.2 2.75" result="m"/>
+        <feComposite in="SourceGraphic" in2="m" operator="in"/>
+      </filter>
+      <radialGradient id="g-ink" cx="50%" cy="50%" r="50%">
+        <stop offset="0" stop-color="#14100c" stop-opacity="0.55"/>
+        <stop offset="0.55" stop-color="#14100c" stop-opacity="0.32"/>
+        <stop offset="1" stop-color="#14100c" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+  </svg>
 
-  <div id="ui-overlay">
-    <header id="header">
-      <h1 class="title-hanja">周易占卦</h1>
-      <p class="subtitle">마음을 가다듬고 동전을 던지세요</p>
-    </header>
+  <canvas id="scene" aria-hidden="true"></canvas>
 
-    <div id="spacer"></div>
-
-    <div id="bottom-area">
-      <div id="hexagram-panel">
-        <div id="hexagram-lines"></div>
-        <div id="throw-counter">
-          <span id="current-throw">0</span> / 6
-        </div>
+  <!-- ① 인트로: 한지 위로 먹이 번지고, 여섯 효가 붓으로 그어지고, 인장이 찍힌 뒤 판 위로 걷힌다 -->
+  <div id="intro" class="intro">
+    <div class="intro-paper" aria-hidden="true"></div>
+    <div class="intro-stage">
+      <svg class="intro-art" viewBox="0 0 240 300" aria-hidden="true">
+        <g class="intro-ink"><circle cx="120" cy="150" r="118" fill="url(#g-ink)" filter="url(#f-bleed)"/></g>
+        <g class="intro-lines" filter="url(#f-brush)" stroke="#16110d" stroke-width="21" fill="none">
+          <!-- 아래(初爻)에서 위(上爻)로: 旣濟 ䷾ 양·음·양·음·양·음 -->
+          <path class="ln ln1" pathLength="1" d="M22 262 H218"/>
+          <path class="ln ln2" pathLength="1" d="M22 218 H104"/><path class="ln ln2" pathLength="1" d="M136 218 H218"/>
+          <path class="ln ln3" pathLength="1" d="M22 174 H218"/>
+          <path class="ln ln4" pathLength="1" d="M22 130 H104"/><path class="ln ln4" pathLength="1" d="M136 130 H218"/>
+          <path class="ln ln5" pathLength="1" d="M22 86 H218"/>
+          <path class="ln ln6" pathLength="1" d="M22 42 H104"/><path class="ln ln6" pathLength="1" d="M136 42 H218"/>
+        </g>
+      </svg>
+      <div class="intro-title-col">
+        <p class="intro-title hanja" aria-hidden="true">周易</p>
+        <span class="seal intro-seal hanja" aria-hidden="true">占</span>
       </div>
-      <div id="coin-result-display"></div>
-      <div id="controls">
-        <button id="throw-btn"><span class="hanja">擲</span>&ensp;던지기</button>
-        <button id="view-result-btn" class="hidden">결과 보기</button>
+    </div>
+    <p class="intro-caption">동전 세 닢, 여섯 번의 물음</p>
+    <button id="intro-skip" class="intro-skip" type="button">건너뛰기</button>
+  </div>
+
+  <!-- 상단 바: 인장 로고 + 보조 기능 메뉴 하나 -->
+  <header id="topbar" class="topbar" hidden>
+    <div class="brand">
+      <span class="seal seal--xs hanja" aria-hidden="true">周易</span>
+      <span class="brand-name">주역 동전점</span>
+    </div>
+    <div class="menu-wrap">
+      <button id="menu-btn" class="icon-btn menu-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu" aria-label="메뉴">
+        <span class="trigram" aria-hidden="true"><i></i><i></i><i></i></span>
+      </button>
+      <div id="menu" class="menu" role="menu" aria-labelledby="menu-btn" hidden>
+        <button id="sound-btn" class="menu-item" type="button" role="menuitemcheckbox" aria-checked="true">동전 소리<span class="menu-state" aria-hidden="true"></span></button>
+        <button id="shake-toggle" class="menu-item" type="button" role="menuitemcheckbox" aria-checked="true" hidden>폰 흔들어 던지기<span class="menu-state" aria-hidden="true"></span></button>
+        <button id="motion-allow" class="menu-item" type="button" role="menuitem" hidden>폰 흔들어 던지기 켜기<span class="menu-state"></span></button>
+        <button id="menu-coach" class="menu-item" type="button" role="menuitem">던지는 법</button>
+        <button id="menu-manual" class="menu-item" type="button" role="menuitem">효 직접 고르기</button>
+        <button id="info-open" class="menu-item" type="button" role="menuitem" aria-haspopup="dialog" aria-controls="info-panel"><span class="hanja" aria-hidden="true">占法</span> 점괘 보는 법</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 던지기 화면: 인트로 다음의 단 한 장 -->
+  <main id="hud" class="hud" hidden>
+    <div class="ask-line">
+      <label for="question-input" class="ask-mark hanja"><span aria-hidden="true">問</span><span class="sr-only">물을 것(선택)</span></label>
+      <textarea id="question-input" class="ask-field" rows="1" maxlength="200" placeholder="물을 것이 있다면 적어 두세요 (선택)" aria-describedby="q-privacy"></textarea>
+      <p id="q-privacy" class="sr-only">물음은 공유 링크에 담기지 않습니다.</p>
+    </div>
+    <div class="hud-bottom">
+      <div id="coin-toast" class="coin-toast" role="status" aria-live="polite"></div>
+      <!-- 처음 쓸 때 한 번: 던지는 법 안내(첫 던지기에 사라진다. 메뉴의 '던지는 법'으로 다시 볼 수 있다) -->
+      <div id="coach" class="coach" role="group" aria-label="던지는 법" hidden>
+        <p class="coach-text"><span class="coach-main"></span><span class="coach-sub"></span></p>
+        <button id="coach-ok" class="coach-btn" type="button">알겠어요</button>
+      </div>
+      <p class="throw-guide">그 물음을 마음에 깊이 품고 여섯 번 던지세요</p>
+      <ol id="ladder" class="ladder" aria-label="괘를 세우는 여섯 효"></ol>
+      <div class="hud-actions">
+        <button id="throw-btn" class="btn btn--throw" type="button" disabled aria-describedby="throw-hint">
+          <span class="charge" aria-hidden="true"><i id="charge-bar"></i></span>
+          <span class="throw-step"><span id="throw-yao" class="throw-yao hanja">初爻</span><span id="throw-count" class="throw-count">1/6</span></span><span class="throw-text"><span class="throw-label">판을 펴는 중</span><span class="throw-sub" hidden></span></span>
+        </button>
+        <button id="view-result-btn" class="btn btn--throw btn--ghost" type="button" hidden>괘 다시 보기</button>
+        <p id="throw-hint" class="throw-hint" aria-live="polite"></p>
+        <button id="nostage-btn" class="btn btn--line-dark" type="button" hidden>판 없이 던지기</button>
+        <button id="hud-manual" class="hud-link" type="button">효 직접 고르기</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ⑤ 결과: 한지 두루마리 -->
+  <div id="result-modal" class="sheet-wrap" hidden>
+    <div class="sheet-backdrop"></div>
+    <article class="sheet" role="dialog" aria-modal="true" aria-labelledby="result-title">
+      <div class="sheet-bar">
+        <button id="info-btn" class="sheet-link" type="button" aria-haspopup="dialog" aria-controls="info-panel"><span class="hanja" aria-hidden="true">占法</span> 보는 법</button>
+        <button id="modal-close-btn" class="icon-btn icon-btn--ink" type="button" aria-label="결과 닫기">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="sheet-scroll">
+        <h2 id="result-title" class="sr-only">점괘 결과</h2>
+        <p id="result-question" class="result-question" hidden><span class="hanja rq-mark" aria-hidden="true">問</span><span class="sr-only">물음:</span><span class="rq-text"></span></p>
+
+        <p id="result-source" class="result-source" hidden>직접 입력한 괘</p>
+        <div id="gua-pair" class="gua-pair">
+          <figure class="gua gua--primary">
+            <figcaption class="gua-cap"><span class="hanja">本卦</span> 지금</figcaption>
+            <div class="gua-body">
+              <div id="result-hex-visual" class="hexfig" aria-hidden="true"></div>
+              <div class="gua-names">
+                <p id="result-name" class="gua-hanja hanja"></p>
+                <p id="result-full-name" class="gua-sub"></p>
+                <p id="result-keyword" class="gua-key"></p>
+              </div>
+            </div>
+          </figure>
+          <span id="gua-arrow" class="gua-arrow hanja" aria-hidden="true">之</span>
+          <figure id="gua-changed" class="gua gua--changed">
+            <figcaption class="gua-cap"><span class="hanja">之卦</span> 앞으로</figcaption>
+            <div class="gua-body">
+              <div id="changed-hex-visual" class="hexfig" aria-hidden="true"></div>
+              <div class="gua-names">
+                <p id="changed-name" class="gua-hanja hanja"></p>
+                <p id="changed-full-name" class="gua-sub"></p>
+                <p id="changed-keyword" class="gua-key"></p>
+              </div>
+            </div>
+          </figure>
+        </div>
+
+        <section class="read-sec" aria-labelledby="sec-primary-h">
+          <h3 id="sec-primary-h" class="sec-h"><span class="hanja">本卦</span><span class="sec-k">지금의 괘</span></h3>
+          <blockquote id="result-judgment" class="gua-text"></blockquote>
+          <p id="result-image" class="gua-image"></p>
+        </section>
+
+        <section id="result-changing" class="read-sec" aria-labelledby="sec-changed-h" hidden>
+          <h3 id="sec-changed-h" class="sec-h"><span class="hanja">之卦</span><span class="sec-k">변화할 괘</span></h3>
+          <blockquote id="changed-judgment" class="gua-text"></blockquote>
+          <p id="changed-image" class="gua-image"></p>
+        </section>
+
+        <section id="result-judge" class="read-sec read-sec--judge" aria-labelledby="sec-judge-h" hidden>
+          <h3 id="sec-judge-h" class="sec-h"><span class="hanja">占斷</span><span class="sec-k">무엇으로 판단하는가</span></h3>
+          <p id="judge-rule" class="judge-rule"></p>
+          <p id="judge-desc" class="judge-desc"></p>
+          <div id="judge-texts" class="judge-texts"></div>
+        </section>
+
+        <section id="result-ask" class="read-sec read-sec--ask" aria-labelledby="sec-ask-h" hidden>
+          <h3 id="sec-ask-h" class="sec-h"><span class="hanja">問占</span><span class="sec-k">점괘에게 묻기</span></h3>
+          <div id="ask-thread" class="ask-thread"></div>
+          <p id="ask-live" class="sr-only" role="status" aria-live="polite"></p>
+          <div id="ask-examples" class="ask-examples"></div>
+          <p class="ask-note">묻기를 사용하면 물음과 품은 질문이 AI 풀이 서버로 전송됩니다.</p>
+          <div class="ask-input-row">
+            <label for="ask-input" class="sr-only">점괘에게 물을 내용</label>
+            <textarea id="ask-input" rows="2" maxlength="500" placeholder="이 괘에 대해 궁금한 점을 적어 보세요"></textarea>
+            <button id="ask-send-btn" class="btn btn--ink" type="button">묻기</button>
+          </div>
+        </section>
+
+        <footer class="sheet-footer">
+          <button id="share-btn" class="btn btn--line" type="button">공유하기</button>
+          <button id="new-reading-btn" class="btn btn--ink" type="button">다시 점치기</button>
+        </footer>
+      </div>
+    </article>
+  </div>
+
+  <!-- 효 직접 고르기: 손으로 던졌거나 이미 얻은 괘가 있는 사람을 위해 -->
+  <div id="manual-panel" class="manual-wrap" hidden>
+    <div class="manual-backdrop"></div>
+    <div class="manual-card" role="dialog" aria-modal="true" aria-labelledby="manual-title" aria-describedby="manual-desc">
+      <div class="manual-head">
+        <h3 id="manual-title" class="manual-title"><span class="hanja" aria-hidden="true">立卦</span> 효 직접 고르기</h3>
+        <button id="manual-close" class="icon-btn icon-btn--ink" type="button" aria-label="직접 고르기 닫기">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <p id="manual-desc" class="manual-desc">손으로 던졌거나 이미 얻은 괘가 있다면 아래(初爻)부터 위(上爻)까지 각 효를 고르세요. 동전 앞면은 陽, 뒷면은 陰입니다.</p>
+      <div class="manual-preview" aria-live="polite">
+        <div id="manual-fig" class="hexfig" aria-hidden="true"></div>
+        <p id="manual-names" class="manual-names"></p>
+      </div>
+      <div id="manual-rows" class="manual-rows"></div>
+      <div class="manual-foot">
+        <button id="manual-clear" class="btn btn--line" type="button">모두 지우기</button>
+        <button id="manual-submit" class="btn btn--ink" type="button" disabled>점괘 보기</button>
       </div>
     </div>
   </div>
 
-  <div id="result-modal" class="hidden">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content">
-      <button id="modal-close-btn" aria-label="닫기">✕</button>
-      <button id="info-btn" aria-label="점괘 보는 법">卜</button>
-      <div class="modal-scroll">
-        <div class="result-primary">
-          <p class="result-label">현재의 괘</p>
-          <div id="result-hex-visual" class="result-lines"></div>
-          <h2 id="result-name" class="result-name"></h2>
-          <p id="result-full-name" class="result-subname"></p>
-          <div class="diamond-ornament">◆</div>
-          <p id="result-keyword" class="result-keyword"></p>
-          <blockquote id="result-judgment" class="result-quote"></blockquote>
-          <div class="line-ornament"></div>
-          <p id="result-image" class="result-image"></p>
+  <!-- 점법 안내 -->
+  <div id="info-panel" class="info-wrap" hidden>
+    <div class="info-backdrop"></div>
+    <div class="info-card" role="dialog" aria-modal="true" aria-labelledby="info-title">
+      <button id="info-close-btn" class="icon-btn icon-btn--ink info-close" type="button" aria-label="안내 닫기">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <h3 id="info-title" class="info-title"><span class="hanja">占法</span> 점괘 보는 법</h3>
+      <dl class="info-body">
+        <div class="info-block">
+          <dt class="info-term"><span class="hanja">擲錢</span> 동전을 던지는 법</dt>
+          <dd class="info-desc">동전 세 닢을 한 번 던질 때마다 앞면은 3, 뒷면은 2로 셉니다. 합이 6이면 老陰, 7이면 少陽, 8이면 少陰, 9면 老陽이 되고, 아래 효부터 위로 여섯 번 쌓아 괘를 세웁니다.</dd>
         </div>
-
-        <div id="result-changing" class="hidden">
-          <div class="changing-bridge"><span>변화할 괘</span></div>
-          <div class="result-changed">
-            <div id="changed-hex-visual" class="result-lines"></div>
-            <h3 id="changed-name" class="result-name"></h3>
-            <p id="changed-full-name" class="result-subname"></p>
-            <div class="diamond-ornament">◆</div>
-            <p id="changed-keyword" class="result-keyword"></p>
-            <blockquote id="changed-judgment" class="result-quote"></blockquote>
-            <div class="line-ornament"></div>
-            <p id="changed-image" class="result-image"></p>
-          </div>
+        <div class="info-block">
+          <dt class="info-term"><span class="hanja">本卦</span> 지금</dt>
+          <dd class="info-desc">여섯 번 던져 얻은 괘로, 지금 처한 상황의 본 모습입니다.</dd>
         </div>
-
-        <div id="result-judge" class="hidden">
-          <div class="judge-bridge"><span>占斷 · 점괘 풀이</span></div>
-          <p id="judge-rule" class="judge-rule"></p>
-          <p id="judge-desc" class="judge-desc"></p>
-          <div id="judge-texts" class="judge-texts"></div>
+        <div class="info-block">
+          <dt class="info-term"><span class="hanja">變爻</span> 움직이는 효</dt>
+          <dd class="info-desc">老陽·老陰으로 나온 효입니다. 지금 변화가 일어나는 자리로, 괘 그림에서 <span class="info-em">주홍색으로 그어지고 老陽·老陰 표시가 붙은 줄</span>입니다.</dd>
         </div>
-
-        <div id="result-ask" class="hidden">
-          <div class="ask-bridge"><span>問占 · 점괘에게 묻기</span></div>
-          <div id="ask-thread" class="ask-thread"></div>
-          <div id="ask-examples" class="ask-examples"></div>
-          <div class="ask-input-row">
-            <textarea id="ask-input" rows="2" maxlength="500" placeholder="이 점괘에 대해 궁금한 점을 물어보세요"></textarea>
-            <button id="ask-send-btn" aria-label="보내기">묻기</button>
-          </div>
+        <div class="info-block">
+          <dt class="info-term"><span class="hanja">之卦</span> 앞으로</dt>
+          <dd class="info-desc">변효가 모두 뒤집힌 뒤의 괘로, 일이 흘러갈 방향과 결말을 뜻합니다. 변효가 없으면 지괘도 생기지 않습니다.</dd>
         </div>
-
-        <div class="modal-footer">
-          <button id="share-btn">공유하기</button>
-          <button id="new-reading-btn">다시 점치기</button>
+        <div class="info-block">
+          <dt class="info-term"><span class="hanja">占斷</span> 무엇을 읽는가</dt>
+          <dd class="info-desc">변효의 개수에 따라 풀이의 근거가 달라집니다.
+            <ul class="info-rules">
+              <li><b>0개</b>본괘의 괘사</li>
+              <li><b>1개</b>변하는 그 효의 효사</li>
+              <li><b>2개</b>두 변효의 효사, 위 효 위주</li>
+              <li><b>3개</b>본괘·지괘 괘사, 본괘 위주</li>
+              <li><b>4개</b>지괘의 안 변한 두 효, 아래 효 위주</li>
+              <li><b>5개</b>지괘의 안 변한 효사</li>
+              <li><b>6개</b>用九·用六, 또는 지괘 괘사</li>
+            </ul>
+            <span class="info-note">변효가 많아질수록 무게중심이 지금(본괘)에서 앞날(지괘)로 옮겨갑니다.</span>
+          </dd>
         </div>
-      </div>
-
-      <div id="info-panel" class="hidden">
-        <div class="info-backdrop"></div>
-        <div class="info-card">
-          <button id="info-close-btn" aria-label="닫기">✕</button>
-          <h3 class="info-title">占法 · 점괘 보는 법</h3>
-          <div class="info-body">
-            <div class="info-block">
-              <p class="info-term">본괘(本卦) · 지금</p>
-              <p class="info-desc">동전을 여섯 번 던져 얻은 괘로, 지금 처한 상황의 본 모습입니다.</p>
-            </div>
-            <div class="info-block">
-              <p class="info-term">변효(變爻) · 움직이는 효</p>
-              <p class="info-desc">노양(老陽)·노음(老陰)으로 나온 효입니다. 지금 변화가 일어나는 지점으로, 괘 그림에서 <span class="info-em">금색으로 빛나며 老陽·老陰으로 표시된 줄</span>입니다.</p>
-            </div>
-            <div class="info-block">
-              <p class="info-term">지괘(之卦) · 변화할 괘 · 앞날</p>
-              <p class="info-desc">변효가 모두 뒤집힌 뒤의 괘로, 일이 흘러갈 방향과 결말을 뜻합니다. 변효가 없으면 변화도 없어 지괘가 생기지 않습니다.</p>
-            </div>
-            <div class="info-block">
-              <p class="info-term">점단(占斷) · 무엇을 읽는가</p>
-              <p class="info-desc">변효의 개수에 따라 풀이의 근거가 달라집니다.</p>
-              <ul class="info-rules">
-                <li><b>0개</b> — 본괘의 괘사</li>
-                <li><b>1개</b> — 변하는 그 효의 효사</li>
-                <li><b>2개</b> — 두 변효의 효사 (위 효 위주)</li>
-                <li><b>3개</b> — 본괘·지괘 괘사 (본괘 위주)</li>
-                <li><b>4개</b> — 지괘의 안 변한 효 (아래 효 위주)</li>
-                <li><b>5개</b> — 지괘의 안 변한 효사</li>
-                <li><b>6개</b> — 用九·用六, 또는 지괘 괘사</li>
-              </ul>
-              <p class="info-note">변효가 많아질수록 무게중심이 현재(본괘)에서 앞날(지괘)로 옮겨갑니다.</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      </dl>
     </div>
   </div>
 

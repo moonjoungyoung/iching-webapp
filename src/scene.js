@@ -1,126 +1,248 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createWoodTexture } from './textures.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { createTrayFloorTexture, createTableTexture } from './textures.js';
+import { PHYS } from './physics-core.js';
 
 /**
- * Three.js 씬 전체 구성: renderer, scene, camera, lights, table
+ * 화질 기본값. 터치 기기(폰·태블릿)는 iPhone 처럼 deviceMemory 가 없고 코어 수도 많아
+ * 사양 추정이 어렵기 때문에 처음부터 한 단계 낮춰 시작한다. 실제로 느리면 stage.js 가 한 단계 더 낮춘다.
  */
+export function detectQuality() {
+  const cores = navigator.hardwareConcurrency || 8;
+  const mem = navigator.deviceMemory || 8;
+  const coarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  const low = cores <= 4 || mem <= 4;
+  const reduced = low || coarse;
+  return {
+    low,
+    coarse,
+    dpr: Math.min(window.devicePixelRatio || 1, reduced ? 1.5 : 2),
+    shadow: reduced ? 1024 : 2048,
+    floorTex: low ? 1024 : coarse ? 1536 : 2048,
+  };
+}
+
+/**
+ * 화면 비율에 맞춘 카메라 구도.
+ * 판 앞쪽 위의 손(그릇)에서 판 가운데로 이어지는 궤적이 한 화면에 들어오도록 앞쪽 비스듬한 위에서 본다.
+ * 세로 화면에서는 동전 지름이 화면 폭의 약 14% 가 되도록 보이는 폭(halfW)을 정한다.
+ */
+export function computeView(w, h) {
+  const aspect = w / h;
+  const portrait = aspect < 1;
+  const fov = portrait ? 40 : 34;
+  const halfFov = THREE.MathUtils.degToRad(fov / 2);
+  // 보이는 반폭·반높이(목표점 거리에서, 단위). 동전 지름 1 단위 / (2 × halfW) = 화면 폭 대비 동전 크기
+  // 세로로 덜 긴 폰(예: 320x568)은 아래 던지기 자리가 화면에서 차지하는 몫이 커서, 조금 물러나고 장면을 위로 올린다
+  const squat = portrait ? Math.max(0, aspect - 0.48) : 0;
+  const halfW = portrait ? 3.55 * (1 + squat * 1.4) : 4.6;
+  const halfH = portrait ? 4.2 : 5.6;
+  const dW = halfW / (Math.tan(halfFov) * aspect);
+  const dH = halfH / Math.tan(halfFov);
+  const dist = Math.max(dW, dH);
+  // 수직에서 기운 각(라디안): 앞쪽 비스듬한 위. 가로 화면은 세로 여유가 적어 조금 더 내려다본다(던진 동전의 정점이 화면 안에)
+  const polar = portrait ? 0.8 : 0.62;
+  const target = portrait ? new THREE.Vector3(0, 0.9, 0.55) : new THREE.Vector3(0, 1.6, 1.4);
+  return { fov, dist, polar, target, shiftY: portrait ? 0.1 + squat * 0.7 : 0 };
+}
+
 export function createScene(canvas) {
-  // --- Renderer ---
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const quality = detectQuality();
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(quality.dpr);
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.25;
+  renderer.toneMappingExposure = 1.05;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-  // --- Scene ---
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0808);
-  scene.fog = new THREE.FogExp2(0x0a0808, 0.04);
+  scene.background = new THREE.Color(0x120d0a);
+  scene.fog = new THREE.FogExp2(0x120d0a, 0.02);
 
-  // --- Camera ---
-  const isMobile = window.innerWidth < 769;
-  const camera = new THREE.PerspectiveCamera(
-    isMobile ? 50 : 42,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    100
+  // 은은한 실내 반사(동전·옻칠 광택용). 한 번 만들고 원본 장면은 버린다.
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const room = new RoomEnvironment(renderer);
+  const envTex = pmrem.fromScene(room, 0.04).texture;
+  scene.environment = envTex;
+  room.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+  pmrem.dispose();
+
+  // --- 카메라: 고정 구도(사용자가 돌리지 않음). 목표점·각·거리로만 움직인다 ---
+  const view = computeView(window.innerWidth, window.innerHeight);
+  const camera = new THREE.PerspectiveCamera(view.fov, window.innerWidth / window.innerHeight, 0.1, 120);
+  const target = view.target.clone();
+  /** 목표점(target)을 중심으로 수직에서 polar 만큼 기운 dist 거리에 둔다 */
+  const placeCamera = (v, polar = v.polar, dist = v.dist, t = target) => {
+    camera.position.set(0, Math.cos(polar) * dist, Math.sin(polar) * dist).add(t);
+    camera.lookAt(t);
+  };
+  placeCamera(view);
+  const applyShift = (w, h, v) => camera.setViewOffset(w, h, 0, Math.round(h * v.shiftY), w, h);
+  applyShift(window.innerWidth, window.innerHeight, view);
+
+  // --- 빛: 왼쪽 위 등잔 같은 주광 + 뒤쪽 낮은 따뜻한 역광 + 아주 옅은 하늘빛 ---
+  scene.add(new THREE.HemisphereLight(0x8e8070, 0x0b0705, 0.5));
+
+  const key = new THREE.DirectionalLight(0xffe2bb, 2.3);
+  key.position.set(-4.2, 11, 5.2);
+  key.castShadow = true;
+  key.shadow.mapSize.set(quality.shadow, quality.shadow);
+  const sc = key.shadow.camera;
+  sc.near = 2; sc.far = 26; sc.left = -4.3; sc.right = 4.3; sc.top = 4.3; sc.bottom = -4.3;
+  key.shadow.radius = 5;
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.02;
+  scene.add(key);
+
+  const rim = new THREE.PointLight(0xffb36b, 22, 17, 2);
+  rim.position.set(4.2, 2.6, -4);
+  scene.add(rim);
+
+  // --- 점판(둥근 칠기 쟁반): 물리 단면(PHYS.tray)과 같은 모양 ---
+  const T = PHYS.tray;
+  const rimY = (T.bevelOuter - T.flatRadius) * Math.tan(T.bevelAngle);
+  const floorTex = createTrayFloorTexture(quality.floorTex);
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(T.flatRadius + 0.02, 112),
+    new THREE.MeshPhysicalMaterial({
+      map: floorTex, roughness: 0.46, metalness: 0.0, clearcoat: 0.7, clearcoatRoughness: 0.24, envMapIntensity: 0.55,
+    }),
   );
-  // 모바일: 더 위에서 내려다보기 (3D 동전이 잘 보이도록)
-  camera.position.set(0, isMobile ? 8 : 7, isMobile ? 4.5 : 5.5);
-  camera.lookAt(0, 0, 0);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0.001;
+  floor.receiveShadow = true;
+  scene.add(floor);
 
-  // --- OrbitControls ---
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.06;
-  controls.maxPolarAngle = Math.PI / 2.15;
-  controls.minPolarAngle = Math.PI / 8;
-  controls.minDistance = 3;
-  controls.maxDistance = 12;
-  controls.target.set(0, 0, 0);
-  controls.enablePan = false;
-
-  // --- Lights ---
-  // 1) 앰비언트 (따뜻한 분위기)
-  const ambient = new THREE.AmbientLight(0xffeedd, 1.0);
-  scene.add(ambient);
-
-  // 2) 디렉셔널 (메인 조명, 그림자)
-  const dirLight = new THREE.DirectionalLight(0xffeedd, 1.8);
-  dirLight.position.set(3, 8, 4);
-  dirLight.castShadow = true;
-  dirLight.shadow.mapSize.width = 2048;
-  dirLight.shadow.mapSize.height = 2048;
-  dirLight.shadow.camera.near = 0.5;
-  dirLight.shadow.camera.far = 20;
-  dirLight.shadow.camera.left = -5;
-  dirLight.shadow.camera.right = 5;
-  dirLight.shadow.camera.top = 5;
-  dirLight.shadow.camera.bottom = -5;
-  dirLight.shadow.radius = 4;
-  dirLight.shadow.bias = -0.0005;
-  scene.add(dirLight);
-
-  // 3) 포인트 라이트 (등잔불 느낌)
-  const warmLight = new THREE.PointLight(0xffaa66, 1.2, 18);
-  warmLight.position.set(-1, 4, -1);
-  scene.add(warmLight);
-
-  // 4) 림 라이트 (뒤에서 오는 보조광)
-  const rimLight = new THREE.DirectionalLight(0x6677aa, 0.4);
-  rimLight.position.set(-3, 3, -5);
-  scene.add(rimLight);
-
-  // --- Table ---
-  const woodTex = createWoodTexture();
-  const tableMat = new THREE.MeshStandardMaterial({
-    map: woodTex,
-    roughness: 0.7,
-    metalness: 0.05,
-    color: 0x3d2b1f,
+  const lacquer = new THREE.MeshPhysicalMaterial({
+    color: 0x1f0f0b, roughness: 0.5, clearcoat: 0.8, clearcoatRoughness: 0.28, envMapIntensity: 0.3, side: THREE.DoubleSide,
   });
+  const profile = [
+    [T.flatRadius, 0], [T.bevelOuter, rimY], [T.wallRadius, rimY],
+    [T.wallRadius + 0.05, rimY - 0.07], [T.wallRadius + 0.09, -0.62],
+  ].map(([r, y]) => new THREE.Vector2(r, y));
+  const tray = new THREE.Mesh(new THREE.LatheGeometry(profile, 180), lacquer);
+  tray.castShadow = true;
+  tray.receiveShadow = true;
+  scene.add(tray);
 
-  const tableGeom = new THREE.BoxGeometry(8, 0.3, 8);
-  const table = new THREE.Mesh(tableGeom, tableMat);
-  table.position.y = -0.15;
+  // 턱과 운두가 만나는 금선 한 줄
+  const gold = new THREE.MeshStandardMaterial({ color: 0xc9a65e, metalness: 1, roughness: 0.32, envMapIntensity: 1.1 });
+  const goldLine = new THREE.Mesh(new THREE.TorusGeometry(T.bevelOuter, 0.011, 6, 220), gold);
+  goldLine.rotation.x = Math.PI / 2;
+  goldLine.position.y = rimY + 0.002;
+  scene.add(goldLine);
+
+  // --- 탁자 ---
+  const table = new THREE.Mesh(
+    new THREE.PlaneGeometry(60, 60),
+    new THREE.MeshStandardMaterial({ map: createTableTexture(), roughness: 0.82, metalness: 0, envMapIntensity: 0.25 }),
+  );
+  table.rotation.x = -Math.PI / 2;
+  table.position.y = -0.62;
   table.receiveShadow = true;
   scene.add(table);
 
-  // 테이블 가장자리 장식선
-  const rimMat = new THREE.MeshStandardMaterial({
-    color: 0x1a0e06,
-    roughness: 0.8,
-    metalness: 0.1,
-  });
-  const edgeThickness = 0.08;
-  const edgeHeight = 0.1;
-  const half = 4;
-  const edgePositions = [
-    { size: [half * 2 + edgeThickness, edgeHeight, edgeThickness], pos: [0, edgeHeight / 2 - 0.02, -half] },
-    { size: [half * 2 + edgeThickness, edgeHeight, edgeThickness], pos: [0, edgeHeight / 2 - 0.02, half] },
-    { size: [edgeThickness, edgeHeight, half * 2], pos: [-half, edgeHeight / 2 - 0.02, 0] },
-    { size: [edgeThickness, edgeHeight, half * 2], pos: [half, edgeHeight / 2 - 0.02, 0] },
-  ];
-  edgePositions.forEach(({ size, pos }) => {
-    const geom = new THREE.BoxGeometry(...size);
-    const mesh = new THREE.Mesh(geom, rimMat);
-    mesh.position.set(...pos);
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-  });
+  // --- 손 암시: 테두리 없이, 모아 쥔 두 손바닥이 만드는 오목한 음영과 탁자 위 손 그림자로만 ---
+  // 선(금테)을 쓰면 판 앞쪽과 겹쳐 '또 하나의 그릇'처럼 읽히므로, 빛을 받지 않는 어두운 살빛 면과 그림자만 둔다.
+  const C = PHYS.cup;
+  const hand = new THREE.Group();
+  const softTex = (draw, w = 128, h = 128) => {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    draw(c.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  // 오목한 손바닥 안쪽 면: 가장자리로 갈수록 옅어지는 어두운 살빛(안쪽 면만 보인다)
+  const cupR = C.innerRadius + 0.2;
+  const palmBowl = new THREE.Mesh(
+    new THREE.SphereGeometry(cupR, 48, 16, 0, Math.PI * 2, Math.PI * 0.6, Math.PI * 0.4),
+    new THREE.MeshBasicMaterial({
+      map: softTex((g, w, h) => {
+        // 구의 아래쪽 띠: v=0(가장자리)에서 투명, v=1(바닥)으로 짙게
+        const grad = g.createLinearGradient(0, 0, 0, h);
+        // 가장자리(손가락·손날)는 빛을 조금 받아 옅은 살빛, 안쪽(손바닥)으로 갈수록 그늘
+        grad.addColorStop(0, 'rgba(120, 84, 60, 0)');
+        grad.addColorStop(0.12, 'rgba(126, 88, 62, 0.42)');
+        grad.addColorStop(0.45, 'rgba(78, 50, 34, 0.62)');
+        grad.addColorStop(1, 'rgba(34, 20, 13, 0.9)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, w, h);
+      }, 4, 128),
+      transparent: true, opacity: 0.85, depthWrite: false, side: THREE.BackSide,
+    }),
+  );
+  palmBowl.position.y = C.floorY + cupR * 0.95;
+  hand.add(palmBowl);
+  // 동전 밑 손바닥 가운데의 짙은 음영(손금 자리처럼 오목하게)
+  const palmShade = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.6, 2.2),
+    new THREE.MeshBasicMaterial({
+      map: softTex((g, w, h) => {
+        const grad = g.createRadialGradient(w / 2, h / 2, 2, w / 2, h / 2, w / 2);
+        grad.addColorStop(0, 'rgba(14, 8, 5, 0.75)');
+        grad.addColorStop(0.6, 'rgba(14, 8, 5, 0.3)');
+        grad.addColorStop(1, 'rgba(14, 8, 5, 0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, w, h);
+      }),
+      transparent: true, opacity: 0.7, depthWrite: false,
+    }),
+  );
+  palmShade.rotation.x = -Math.PI / 2;
+  palmShade.position.y = C.floorY - 0.005;
+  hand.add(palmShade);
+  hand.position.set(C.base.x, C.base.y, C.base.z);
+  scene.add(hand);
 
-  // --- Resize ---
-  function onResize() {
+  // 탁자 위 그림자: 나란히 모아 쥔 두 손 모양(두 손바닥과 손가락 끝 쪽이 판을 향함)
+  const shadowTex = softTex((g, w, h) => {
+    g.filter = 'blur(9px)';
+    g.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    for (const sgn of [-1, 1]) {
+      g.save();
+      g.translate(w / 2 + sgn * w * 0.15, h * 0.55);
+      g.rotate(sgn * 0.18);
+      g.beginPath();
+      g.ellipse(0, 0, w * 0.17, h * 0.3, 0, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
+    g.beginPath();
+    g.ellipse(w / 2, h * 0.68, w * 0.24, h * 0.16, 0, 0, Math.PI * 2);
+    g.fill();
+  }, 160, 160);
+  const handShadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.6, 3.6),
+    new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: 0.85, depthWrite: false }),
+  );
+  handShadow.rotation.x = -Math.PI / 2;
+  // 손은 판 앞 탁자 위 공중에 있으므로 그림자는 탁자 면에 드리운다
+  handShadow.position.set(C.base.x, -0.6, C.base.z - 0.2);
+  scene.add(handShadow);
+
+  /** 화면 크기 변경: 시야·거리를 새 비율에 맞춘다 */
+  function resize() {
     const w = window.innerWidth, h = window.innerHeight;
+    const v = computeView(w, h);
     camera.aspect = w / h;
+    camera.fov = v.fov;
+    applyShift(w, h, v);
     camera.updateProjectionMatrix();
-    renderer.setSize(w, h);
+    renderer.setSize(w, h, false);
+    return v;
   }
-  window.addEventListener('resize', onResize);
 
-  return { renderer, scene, camera, controls };
+  /** 프레임이 무거우면 한 단계 더 낮춘다(해상도 1배, 그림자 512) */
+  function lowerQuality() {
+    renderer.setPixelRatio(1);
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    key.shadow.mapSize.set(512, 512);
+    if (key.shadow.map) { key.shadow.map.dispose(); key.shadow.map = null; }
+  }
+
+  return { renderer, scene, camera, quality, view, placeCamera, resize, lowerQuality, target, hand, handShadow };
 }

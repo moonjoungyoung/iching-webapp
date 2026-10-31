@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- 공유 썸네일(OG 1200x630) 원판. scripts/og/render-og.cjs 가 Playwright 로 찍어 public/og-image.png 를 만든다.
+     인트로 첫 장면(한지, 먹 번짐, 붓으로 그은 여섯 효, 周易, 占 인장)을 그대로 옮겼다. ?icon 이면 정사각 아이콘(180x180) 구도. -->
+<style>
+  @font-face { font-family: 'Bakudai'; src: url('../../src/assets/fonts/bakudai-subset.woff2') format('woff2'); }
+  @import url('https://fonts.googleapis.com/css2?family=Hahmlet:wght@400;600&display=block');
+  html, body { margin: 0; }
+  body {
+    width: 1200px; height: 630px; overflow: hidden; position: relative;
+    background: #ece3d1 url('../../src/assets/hanji-grain.webp') center / 900px repeat;
+    color: #1a1410; font-family: 'Hahmlet', 'Noto Serif KR', serif;
+  }
+  body::after { /* 가장자리 그늘: 한지가 판 위에 놓인 느낌 */
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 55%, rgba(60,40,20,0.22) 100%);
+  }
+  .art { position: absolute; left: 150px; top: 95px; width: 352px; height: 440px; }
+  .title-col { position: absolute; left: 590px; top: 92px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  .title { font-family: 'Bakudai', serif; font-size: 168px; line-height: 1; letter-spacing: 0.02em; margin: 0; }
+  .seal {
+    position: absolute; left: 1006px; top: 112px; width: 84px; height: 84px; border-radius: 6px;
+    background: #b02a20; color: #f6ead2; font-family: 'Bakudai', serif; font-size: 54px;
+    display: flex; align-items: center; justify-content: center; filter: url(#f-stamp); transform: rotate(-4deg);
+    box-shadow: inset 0 0 0 4px rgba(246,234,210,0.55);
+  }
+  .ko-title { font-size: 66px; font-weight: 600; letter-spacing: 0.02em; margin: 26px 0 0 4px; }
+  .caption { font-size: 30px; color: #4f453b; letter-spacing: 0.32em; margin: 18px 0 0 6px; }
+  .rule { width: 420px; height: 1px; background: rgba(79,69,59,0.45); margin: 30px 0 0 4px; }
+  .sub { font-size: 24px; color: #85786a; letter-spacing: 0.06em; margin: 18px 0 0 6px; }
+
+  body.icon { width: 180px; height: 180px; background-size: 300px; }
+  body.icon > :not(.icon-mark):not(svg) { display: none; }
+  .icon-mark { display: none; }
+  body.icon .icon-mark {
+    display: flex; position: absolute; inset: 0; align-items: center; justify-content: center;
+    background: #b02a20; color: #f6ead2; font-family: 'Bakudai', serif; font-size: 112px; line-height: 1;
+  }
+  body.icon::after { display: none; }
+</style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <filter id="f-brush" x="-4%" y="-40%" width="108%" height="180%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.03 0.55" numOctaves="2" seed="7" result="n"/>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="6" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <filter id="f-bleed" x="-60%" y="-60%" width="220%" height="220%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="3" result="n"/>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="34" xChannelSelector="R" yChannelSelector="B"/>
+        <feGaussianBlur stdDeviation="2"/>
+      </filter>
+      <filter id="f-stamp" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="2" seed="11" result="n"/>
+        <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -3.2 2.75" result="m"/>
+        <feComposite in="SourceGraphic" in2="m" operator="in"/>
+      </filter>
+      <radialGradient id="g-ink" cx="50%" cy="50%" r="50%">
+        <stop offset="0" stop-color="#14100c" stop-opacity="0.55"/>
+        <stop offset="0.55" stop-color="#14100c" stop-opacity="0.32"/>
+        <stop offset="1" stop-color="#14100c" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+  </svg>
+
+  <svg class="art" viewBox="0 0 240 300" aria-hidden="true">
+    <g><circle cx="120" cy="150" r="118" fill="url(#g-ink)" filter="url(#f-bleed)"/></g>
+    <!-- 旣濟 ䷾ (아래→위 양·음·양·음·양·음), 인트로와 같은 괘 -->
+    <g filter="url(#f-brush)" stroke="#16110d" stroke-width="21" fill="none">
+      <path d="M22 262 H218"/>
+      <path d="M22 218 H104"/><path d="M136 218 H218"/>
+      <path d="M22 174 H218"/>
+      <path d="M22 130 H104"/><path d="M136 130 H218"/>
+      <path d="M22 86 H218"/>
+      <path d="M22 42 H104"/><path d="M136 42 H218"/>
+    </g>
+  </svg>
+
+  <div class="title-col">
+    <p class="title">周易</p>
+    <p class="ko-title">주역 동전점</p>
+    <p class="caption">동전 세 닢, 여섯 번의 물음</p>
+    <div class="rule"></div>
+    <p class="sub">마음에 물음을 품고 여섯 번 던져 괘를 얻습니다</p>
+  </div>
+  <span class="seal">占</span>
+
+  <div class="icon-mark">占</div>
+  <script>if (location.search.includes('icon')) document.body.classList.add('icon');</script>
+</body>
+</html>
