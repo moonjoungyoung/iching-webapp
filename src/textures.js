@@ -1,202 +1,140 @@
 import * as THREE from 'three';
 
-/**
- * 동전 앞면/뒷면 텍스처 생성 (Canvas 1024px)
- */
-export function createCoinFaceTexture(isHeads) {
-  const size = 1024;
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const ctx = c.getContext('2d');
-  const cx = size / 2, cy = size / 2, r = size / 2 - 12;
+// 팔괘(先天): 건태리진손감간곤. 1=양효, 0=음효 (안쪽→바깥쪽)
+const TRIGRAMS = [
+  [1, 1, 1], [1, 1, 0], [1, 0, 1], [1, 0, 0],
+  [0, 1, 1], [0, 1, 0], [0, 0, 1], [0, 0, 0],
+];
 
-  ctx.clearRect(0, 0, size, size);
-
-  // 동전 바탕 — 다층 그라디언트로 입체감
-  const grad = ctx.createRadialGradient(cx * 0.85, cy * 0.8, r * 0.05, cx, cy, r);
-  grad.addColorStop(0, '#e2c070');
-  grad.addColorStop(0.25, '#d4a84a');
-  grad.addColorStop(0.55, '#b87333');
-  grad.addColorStop(0.8, '#8b5e20');
-  grad.addColorStop(1, '#6b4510');
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  // 외곽 테두리 — 이중 링 (양각)
-  ctx.beginPath();
-  ctx.arc(cx, cy, r - 3, 0, Math.PI * 2);
-  ctx.strokeStyle = '#ddb866';
-  ctx.lineWidth = 6;
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.arc(cx, cy, r - 12, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(160,120,40,0.4)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // 내곽 원 (구멍 주변 장식)
-  ctx.beginPath();
-  ctx.arc(cx, cy, r * 0.38, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(160,120,40,0.35)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // 사각 구멍 — 그림자 효과
-  const hole = size * 0.09;
-  // 구멍 그림자
-  ctx.fillStyle = 'rgba(10,5,0,0.6)';
-  ctx.fillRect(cx - hole + 3, cy - hole + 3, hole * 2, hole * 2);
-  // 구멍 본체
-  ctx.fillStyle = '#0e0800';
-  ctx.fillRect(cx - hole, cy - hole, hole * 2, hole * 2);
-  // 구멍 양각 테두리
-  ctx.strokeStyle = '#c9a84c';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(cx - hole, cy - hole, hole * 2, hole * 2);
-  // 내부 밝은 테두리
-  ctx.strokeStyle = 'rgba(220,180,80,0.3)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(cx - hole + 4, cy - hole + 4, hole * 2 - 8, hole * 2 - 8);
-
-  if (isHeads) {
-    // 앞면: 開元通寶 — 양각 효과 (그림자 + 하이라이트)
-    const fontSize = size * 0.11;
-    const charDist = r * 0.42;
-    const chars = [
-      { ch: '開', x: cx, y: cy - charDist },
-      { ch: '元', x: cx, y: cy + charDist },
-      { ch: '通', x: cx - charDist, y: cy },
-      { ch: '寶', x: cx + charDist, y: cy },
-    ];
-
-    ctx.font = `bold ${fontSize}px "LXGW WenKai TC", "Noto Serif SC", serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    // 그림자 (음각 깊이감)
-    ctx.fillStyle = 'rgba(40,20,5,0.7)';
-    chars.forEach(({ ch, x, y }) => ctx.fillText(ch, x + 2, y + 2));
-
-    // 본체
-    ctx.fillStyle = '#6b4a18';
-    chars.forEach(({ ch, x, y }) => ctx.fillText(ch, x, y));
-
-    // 하이라이트 (양각 반사)
-    ctx.fillStyle = 'rgba(220,180,100,0.3)';
-    chars.forEach(({ ch, x, y }) => ctx.fillText(ch, x - 1.5, y - 1.5));
-
-    // 네 모서리 장식 점
-    const dotDist = r * 0.7;
-    const dotR = 4;
-    ctx.fillStyle = 'rgba(100,70,20,0.5)';
-    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([dx, dy]) => {
-      ctx.beginPath();
-      ctx.arc(cx + dx * dotDist * 0.5, cy + dy * dotDist * 0.5, dotR, 0, Math.PI * 2);
-      ctx.fill();
-    });
-  } else {
-    // 뒷면: 월아(月牙) 초승달 + 점 (전통 뒷면 디자인)
-    ctx.fillStyle = '#6b4a18';
-
-    // 위쪽 초승달
-    ctx.beginPath();
-    ctx.arc(cx, cy - r * 0.32, 14, Math.PI * 0.15, Math.PI * 0.85, false);
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = '#6b4a18';
-    ctx.stroke();
-
-    // 아래쪽 점
-    ctx.beginPath();
-    ctx.arc(cx, cy + r * 0.32, 7, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 미세한 동심원 장식
-    ctx.beginPath();
-    ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(120,85,30,0.15)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-
-  // 세월의 흔적 — 미세 노이즈 + 녹청 자국
-  const imgData = ctx.getImageData(0, 0, size, size);
-  const d = imgData.data;
-  for (let i = 0; i < d.length; i += 4) {
-    if (d[i + 3] === 0) continue;
-    const noise = (Math.random() - 0.5) * 14;
-    d[i] = Math.max(0, Math.min(255, d[i] + noise));
-    d[i + 1] = Math.max(0, Math.min(255, d[i + 1] + noise));
-    d[i + 2] = Math.max(0, Math.min(255, d[i + 2] + noise));
-
-    // 랜덤 녹청 자국 (초록빛)
-    if (Math.random() < 0.003) {
-      d[i] = Math.max(0, d[i] - 15);
-      d[i + 1] = Math.min(255, d[i + 1] + 8);
-      d[i + 2] = Math.min(255, d[i + 2] + 5);
-    }
-  }
-  ctx.putImageData(imgData, 0, 0);
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  return tex;
+function rand(seed) {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 /**
- * 나무 질감 테이블 텍스처 생성
+ * 점판 바닥: 흑칠 바탕 + 금니(金泥)로 그은 원(一圓相) + 가장자리 팔괘 새김.
+ * 캔버스 그리기만 쓰고 픽셀 단위 루프는 쓰지 않는다.
  */
-export function createWoodTexture() {
-  const size = 1024;
+export function createTrayFloorTexture(size = 2048) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d');
+  const R = size / 2;
+  const rnd = rand(64);
 
-  ctx.fillStyle = '#2a1810';
+  // 흑칠: 가운데가 아주 조금 붉게 비치는 검정
+  const base = ctx.createRadialGradient(R * 0.92, R * 0.86, R * 0.05, R, R, R);
+  base.addColorStop(0, '#2a1611');
+  base.addColorStop(0.6, '#1b0e0b');
+  base.addColorStop(1, '#120a08');
+  ctx.fillStyle = base;
   ctx.fillRect(0, 0, size, size);
 
-  for (let i = 0; i < 90; i++) {
-    const y = Math.random() * size;
-    const r = 45 + Math.random() * 35;
-    const g = 22 + Math.random() * 22;
-    const b = 8 + Math.random() * 14;
-    const a = 0.12 + Math.random() * 0.22;
-    ctx.strokeStyle = `rgba(${r},${g},${b},${a})`;
-    ctx.lineWidth = 0.4 + Math.random() * 2.2;
+  // 옻칠 붓결: 동심원을 따라 흐르는 아주 옅은 결
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 140; i++) {
+    const r = R * (0.08 + rnd() * 0.9);
+    const a0 = rnd() * Math.PI * 2;
+    ctx.strokeStyle = rnd() < 0.5 ? `rgba(70,32,22,${0.05 + rnd() * 0.08})` : `rgba(0,0,0,${0.08 + rnd() * 0.1})`;
+    ctx.lineWidth = size * (0.0015 + rnd() * 0.004);
     ctx.beginPath();
-    const phase = Math.random() * Math.PI * 2;
-    const freq = 30 + Math.random() * 40;
-    const amp = 1.5 + Math.random() * 3;
-    for (let x = 0; x <= size; x += 4) {
-      const yy = y + Math.sin(x / freq + phase) * amp;
-      x === 0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
-    }
+    ctx.arc(R, R, r, a0, a0 + 0.4 + rnd() * 1.6);
     ctx.stroke();
   }
 
-  for (let i = 0; i < 2; i++) {
-    const kx = 120 + Math.random() * (size - 240);
-    const ky = 120 + Math.random() * (size - 240);
-    const kr = 18 + Math.random() * 25;
-    const grad = ctx.createRadialGradient(kx, ky, 0, kx, ky, kr);
-    grad.addColorStop(0, 'rgba(18,10,4,0.5)');
-    grad.addColorStop(0.6, 'rgba(35,20,10,0.25)');
-    grad.addColorStop(1, 'rgba(42,24,16,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(kx - kr, ky - kr, kr * 2, kr * 2);
+  // 一圓相: 붓 한 번에 긋는 원. 별도 캔버스에 불투명하게 그은 뒤 옅게 얹어 이음매 얼룩을 없앤다
+  const ec = document.createElement('canvas');
+  ec.width = ec.height = size;
+  const e = ec.getContext('2d');
+  e.lineCap = 'round';
+  e.strokeStyle = '#c49e56';
+  const er = R * 0.64;
+  const start = -Math.PI * 0.62;
+  const sweep = Math.PI * 1.86;
+  const steps = 420;
+  for (let i = 0; i < steps; i++) {
+    const t = i / steps;
+    const a = start + sweep * t;
+    // 처음엔 먹을 듬뿍(굵게), 끝으로 갈수록 가늘고 갈라진다
+    const w = size * (0.006 + 0.016 * Math.sin(Math.min(1, t * 1.4) * Math.PI * 0.5) * (1 - t * 0.75));
+    const wob = Math.sin(t * 23) * size * 0.0012;
+    e.lineWidth = w;
+    e.beginPath();
+    e.arc(R, R, er + wob, a, a + sweep / steps * 1.6);
+    e.stroke();
   }
+  // 마른 붓 끝의 갈라짐
+  e.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 70; i++) {
+    const t = 0.55 + rnd() * 0.45;
+    const a = start + sweep * t;
+    e.lineWidth = size * (0.0008 + rnd() * 0.0016);
+    e.beginPath();
+    e.arc(R, R, er + (rnd() - 0.5) * size * 0.014, a, a + 0.05 + rnd() * 0.25);
+    e.stroke();
+  }
+  ctx.globalAlpha = 0.34;
+  ctx.drawImage(ec, 0, 0);
+  ctx.globalAlpha = 1;
 
-  const sheen = ctx.createRadialGradient(size * 0.45, size * 0.4, 0, size / 2, size / 2, size * 0.6);
-  sheen.addColorStop(0, 'rgba(60,35,18,0.15)');
-  sheen.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = sheen;
-  ctx.fillRect(0, 0, size, size);
+  // 팔괘 띠: 가는 금선 두 줄 사이에 괘를 새긴다
+  ctx.strokeStyle = 'rgba(201,166,94,0.32)';
+  ctx.lineWidth = Math.max(1, size * 0.0012);
+  [0.78, 0.95].forEach((k) => { ctx.beginPath(); ctx.arc(R, R, R * k, 0, Math.PI * 2); ctx.stroke(); });
+
+  const ringR = R * 0.865, barLen = R * 0.15, barH = R * 0.016, gap = R * 0.03;
+  ctx.fillStyle = 'rgba(201,166,94,0.42)';
+  TRIGRAMS.forEach((tri, k) => {
+    const ang = (k / 8) * Math.PI * 2 - Math.PI / 2;
+    ctx.save();
+    ctx.translate(R + Math.cos(ang) * ringR, R + Math.sin(ang) * ringR);
+    ctx.rotate(ang + Math.PI / 2);
+    tri.forEach((yang, j) => {
+      const y = (1 - j) * gap; // 안쪽 효가 아래
+      if (yang) ctx.fillRect(-barLen / 2, y - barH / 2, barLen, barH);
+      else {
+        const seg = barLen * 0.42;
+        ctx.fillRect(-barLen / 2, y - barH / 2, seg, barH);
+        ctx.fillRect(barLen / 2 - seg, y - barH / 2, seg, barH);
+      }
+    });
+    ctx.restore();
+  });
 
   const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+/** 탁자: 반복되는 어두운 나뭇결 */
+export function createTableTexture(size = 512) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const rnd = rand(7);
+  ctx.fillStyle = '#140d0a';
+  ctx.fillRect(0, 0, size, size);
+  for (let i = 0; i < 70; i++) {
+    const y = rnd() * size;
+    ctx.strokeStyle = `rgba(${40 + rnd() * 30},${22 + rnd() * 14},${12 + rnd() * 8},${0.12 + rnd() * 0.2})`;
+    ctx.lineWidth = 0.6 + rnd() * 2;
+    ctx.beginPath();
+    const phase = rnd() * Math.PI * 2, amp = 1 + rnd() * 3;
+    for (let x = 0; x <= size; x += 8) {
+      const yy = y + Math.sin((x / size) * Math.PI * 2 * 2 + phase) * amp;
+      if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+    }
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(5, 5);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
