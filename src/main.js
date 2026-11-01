@@ -3,7 +3,8 @@ import { runIntro } from './intro.js';
 import {
   initUI, showTopbar, showHud, updateLadder, setThrowState, focusThrow, focusViewResult,
   showCoinToast, clearCoinToast, resetHud, showResult, prepareResult, dismissResultForNewReading,
-  getLastResult, setMotionAvailable, isShakeEnabled, setCharge, anyOverlayOpen, onOverlayChange, setMotionPermission, setCoach,
+  getLastResult, setMotionAvailable, isShakeEnabled, setCharge, anyOverlayOpen, onOverlayChange, setMotionPermission,
+  openQuestion, refreshQuestionHowto,
 } from './ui.js';
 import { initManual, openManual } from './manual.js';
 import { createShake } from './shake.js';
@@ -15,7 +16,6 @@ import { later, now } from './clock.js';
 
 const canvas = document.getElementById('scene');
 const throwBtn = document.getElementById('throw-btn');
-const qInput = document.getElementById('question-input');
 const reduceMotion = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ---------------- 3D 무대 불러오기 ----------------
@@ -61,7 +61,7 @@ function ensureStage() {
     .then(() => {
       physicsOk = true;
       refreshThrow();
-      // 물리가 처음 준비되면 주 동작에 초점(창이 떠 있거나 질문을 쓰는 중이면 그대로 둔다)
+      // 물리가 처음 준비되면 주 동작에 초점(물음 창 등 창이 떠 있으면 그대로 둔다)
       if (inThrowPhase) focusThrow();
     })
     .catch((e) => {
@@ -92,8 +92,6 @@ function refreshThrow() {
     rolling,
     // 짧은 탭 뒤 던지기 예약 중에는 '놓으면 던져집니다' 대신 평소 이름으로(이미 놓았으므로)
     holding: holding && !tapTimer,
-    // 질문을 쓰는 중에는 흔들기가 막히므로 버튼 방식 이름으로
-    shakeBlocked: document.activeElement === qInput,
     done: state.phase === 'complete',
     noStage: stageFailed,
     offerNoStage: offerNoStage && !physicsOk && !stageFailed,
@@ -134,7 +132,6 @@ async function onThrow(opts = {}, how = {}) {
   const useStage = physicsOk && !how.noStage;
   if (!useStage && !stageFailed && !how.noStage) return; // 아직 판을 펴는 중
   unlockAudio();
-  hideCoach(); // 첫 던지기(흔들기든 버튼이든)에 안내를 거둔다
   rolling = true;
   holding = false;
   retryShown = false;
@@ -225,10 +222,9 @@ function onNewReading() {
   resetGame();
   resetHud();
   ensureStage();
-  // 던지기 화면으로 바로 돌아온다. 질문 칸은 이전 값 그대로
+  // 던지기 화면 위에 물음 창을 다시 띄운다(이전 물음을 채운 채). 닫히면 던지기 버튼으로 초점이 간다
   startThrowing();
-  focusThrow();
-  maybeShowCoach();
+  if (!openQuestion({ again: true })) focusThrow();
 }
 
 /** 직접 고른 여섯 효로 괘를 세운다. 던지기와 같은 결과 경로를 탄다 */
@@ -421,12 +417,6 @@ window.addEventListener('keyup', (e) => {
   endHold();
 });
 
-// 질문 칸 밖을 누르면 확실히 칸을 닫는다(모바일에서 캔버스를 눌러도 키보드가 남는 경우)
-document.addEventListener('pointerdown', (e) => {
-  if (document.activeElement === qInput && e.target !== qInput) qInput.blur();
-}, true);
-qInput.addEventListener('blur', refreshThrow);
-
 // 창이 초점을 잃거나 탭이 숨으면, 메뉴·창이 열리면 누르기를 던지지 않고 정리한다
 window.addEventListener('blur', cancelHold);
 document.addEventListener('visibilitychange', () => { if (document.hidden) cancelHold(); });
@@ -438,7 +428,7 @@ const shake = createShake({
   canUse: () => inThrowPhase && isShakeEnabled() && !rolling && physicsOk && state.phase === 'ready' && now() >= shakeQuietUntil
     && !anyOverlayOpen() && !document.hidden
     && !/TEXTAREA|INPUT/.test(document.activeElement ? document.activeElement.tagName : ''),
-  onAvailable: () => { setMotionAvailable(true); syncCoach(); },
+  onAvailable: () => { setMotionAvailable(true); refreshQuestionHowto(); },
   onCharge: (e) => setCharge(e),
   onSample: (ax, ay, az) => {
     if (!stage) return;
@@ -461,7 +451,7 @@ const shake = createShake({
 });
 
 /* ---------------- iOS 동작 권한 ----------------
- * 첫 던지기 버튼을 누르고 뗄 때(사용자 활성화 안에서) 조용히 묻는다.
+ * 물음 창의 시작·건너뛰기, 인트로 탭, 던지기 버튼을 누르고 뗄 때 중 먼저 오는 누름(사용자 활성화) 안에서 조용히 묻는다.
  * 요청 자체가 실패하면(활성화 없음 등) 다음 탭에서 다시 묻고, 명시적으로 거부하면 버튼 방식으로 쓰면서
  * 메뉴에 '흔들기 다시 허용'을 둔다.
  */
@@ -478,52 +468,28 @@ function askMotionPermission(fromMenu = false) {
     else if (r === 'denied') motionPerm = 'denied';
     // 'error' 는 그대로 둔다('prompt' 면 다음 탭에서 다시 묻는다)
     setMotionPermission(motionPerm, fromMenu && r === 'denied');
-    syncCoach();
+    refreshQuestionHowto();
   });
 }
 
-/* ---------------- 처음 쓸 때 안내(코치마크) ----------------
- * 첫 방문에 던지기 화면이 처음 뜨면 손 안 동전 아래에 짧은 카드를 띄운다. 첫 던지기(흔들기든 버튼이든)나
- * [알겠어요]로 사라지고, 이후 방문에는 띄우지 않는다(메뉴의 '던지는 법'으로 다시 볼 수 있다).
- *  - 모션 센서가 있는 터치 폰: 흔들어 털기 안내. iOS 처럼 권한이 필요하면 카드의 [흔들어 볼게요] 누름 안에서 묻는다
- *  - 그 외(데스크톱·센서 없음·거부·흔들기 끔): 누르고 있다 놓기 안내
+/* ---------------- 물음 창 ----------------
+ * 인트로 다음(같은 세션 재방문의 짧은 인트로 포함), 다시 점치기, 위쪽 물음 줄·메뉴의 '던지는 법'에서 뜬다.
+ * 던지는 법은 기기에 맞춘다
+ *  - 흔들기를 쓸 수 있는 터치 폰(가속도가 들어오거나 iOS 처럼 권한을 물을 수 있음): 흔들다 털기
+ *  - 그 외 터치 기기(센서 없음·거부·흔들기 끔): 꾹 눌렀다 놓기
+ *  - 마우스 기기: 버튼·판을 눌렀다 놓기, 스페이스
+ * iOS 는 시작·건너뛰기 누름 안에서 동작 권한을 동기로 묻는다(Esc 는 사용자 활성화가 아니라 묻지 않는다).
  */
-const COACH_KEY = 'iching.coach';
-let coachMode = null;
-const coachSeen = () => { try { return localStorage.getItem(COACH_KEY) === '1'; } catch (e) { return false; } };
-
-function pickCoachMode() {
+function howtoMode() {
   const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches;
-  if (!touch || !isShakeEnabled() || motionPerm === 'denied') return 'button';
-  if (motionPerm === 'prompt') return 'shake-ask';
-  // 권한을 받았거나(iOS) 가속도가 실제로 들어오는 기기(안드로이드)
-  return shake.available || shake.needsPermission ? 'shake' : 'button';
+  if (!touch) return 'mouse';
+  if (isShakeEnabled() && motionPerm !== 'denied' && (shake.available || shake.needsPermission)) return 'shake';
+  return 'touch';
 }
-function showCoach() {
-  coachMode = pickCoachMode();
-  setCoach(coachMode);
-}
-function maybeShowCoach() {
-  if (coachSeen() || !inThrowPhase || manualReading || state.phase !== 'ready' || state.currentThrow > 0) return;
-  showCoach();
-}
-/** 권한·센서 상태가 바뀌면 떠 있는 카드의 문구를 맞춘다 */
-function syncCoach() {
-  if (!coachMode) return;
-  const m = pickCoachMode();
-  if (m !== coachMode) { coachMode = m; setCoach(m); }
-}
-function hideCoach() {
-  if (!coachMode) return;
-  coachMode = null;
-  setCoach(null);
-  try { localStorage.setItem(COACH_KEY, '1'); } catch (e) { /* 저장소 차단 */ }
-}
-function onCoachOk() {
+function onQuestionDone({ how }) {
+  if (how === 'esc' || how === 'cancel') return; // 사용자 활성화가 아니거나(Esc) 시작이 아님(취소)
   unlockAudio();
-  // iOS: 이 누름(사용자 활성화) 안에서 동기로 권한을 묻는다. 결과에 따라 카드 문구가 바뀐다(syncCoach)
-  if (coachMode === 'shake-ask') { askMotionPermission(); return; }
-  hideCoach();
+  askMotionPermission();
 }
 
 initUI({
@@ -532,8 +498,9 @@ initUI({
   onNewReading,
   onViewResult: () => { const r = getLastResult(); if (r) showResult(r); },
   onMotionAllow: () => askMotionPermission(true),
-  onCoachOk,
-  onCoachShow: () => { clearCoinToast(); showCoach(); },
+  getHowto: () => ({ mode: howtoMode(), ios: shake.needsPermission && motionPerm === 'prompt' }),
+  onQuestionDone,
+  onQuestionClosed: () => { cancelHold(); focusThrow(); },
 });
 initManual({ onSubmit: onManualSubmit });
 
@@ -588,11 +555,12 @@ if (!openFromLink()) {
       // 준비가 제한 시간 안에 끝난 정상 경로만 카메라 진입을 전환과 함께 돌린다.
       // 늦게 준비된 장면은 따로 진입시키지 않고 최종 카메라 자리(createStage 의 기본 구도)에 바로 둔다
       if (ready && stage) stage.playEntrance({ dur: reduced ? 0 : dur, ease });
-      later(() => { focusThrow(); maybeShowCoach(); }, dur);
+      // 판이 드러날 무렵 물음 창이 아래에서 떠오른다(먹 자국이 거의 다 걷힌 시점). 동작 줄이기는 전환이 끝난 뒤 옅게
+      later(() => { if (!openQuestion({ entering: !reduced })) focusThrow(); }, reduced ? dur : Math.round(dur * 0.6));
     },
   });
-  // 인트로를 탭해 넘길 때 그 탭(사용자 활성화) 안에서 소리를 열고, iOS 는 동작 권한도 함께 묻는다.
-  // 그러면 안내 카드를 누르지 않고 흔들기만으로 첫 던지기를 할 수 있다
+  // 인트로를 탭해 넘길 때 그 탭(사용자 활성화) 안에서 소리를 열고, iOS 는 동작 권한도 함께 묻는다
+  // (그러면 물음 창에서 권한 창이 따로 뜨지 않는다)
   const onIntroTap = (e) => {
     const intro = document.getElementById('intro');
     if (!intro) { window.removeEventListener('pointerup', onIntroTap, true); return; }
@@ -607,5 +575,3 @@ if (!openFromLink()) {
   if (intro) intro.remove();
 }
 
-// 질문 칸으로 초점이 옮겨 가면 누르고 있던 흔들기는 던지지 않고 멈춘다
-qInput.addEventListener('focus', () => { cancelHold(); refreshThrow(); });
