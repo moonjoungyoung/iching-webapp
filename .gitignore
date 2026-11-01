@@ -8,3 +8,4 @@ coin-front-old.png
 lambda/deploy/function.zip
 
 .qa
+.logs-cache

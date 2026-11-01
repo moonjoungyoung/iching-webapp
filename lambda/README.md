@@ -37,7 +37,7 @@
 - API 키는 **jober-chat 운영 SSM 파라미터를 런타임에 읽는다**:
   `/copilot/jober-chat/production/secrets/LLM_API_KEY` (복사·하드코딩·로깅하지 않음).
 - Origin 검사: `ALLOW_ORIGIN` 환경변수(쉼표 구분 목록). 기본값
-  `https://d3hvx0sm85rmzt.cloudfront.net,https://d1vry20p02uvjx.cloudfront.net`.
+  `https://d3hvx0sm85rmzt.cloudfront.net`.
   - `Origin` 헤더가 있는데 목록에 없으면 **어떤 처리(레이트리밋·LLM 호출)도 하기 전에 403**(OPTIONS 포함).
   - 목록에 있으면 그 값을 `access-control-allow-origin` 으로 돌려준다(`vary: origin`).
   - `Origin` 헤더가 없는 요청(서버 간 호출 등)은 예전처럼 처리하고 첫 항목을 돌려준다(레이트리밋은 그대로).
@@ -90,3 +90,18 @@ aws lambda update-function-code --function-name iching-ask `
 ## 환경 변수(선택, Lambda)
 `LLM_KEY_PARAM`, `LLM_MODEL`, `ALLOW_ORIGIN`(쉼표 구분 목록), `RATE_TABLE`, `PER_IP_PER_MIN`(6),
 `GLOBAL_PER_DAY`(600), `MAX_TOKENS`(2000). 미설정 시 코드 기본값 사용.
+
+## 호출 기록(분석용)
+- 요청마다 DynamoDB `iching-ask-log`(PK `pk`=`day#YYYY-MM-DD`(KST), SK `sk`=`ISO시각#요청ID`, TTL `exp` 180일)에 한 건을 남긴다.
+  - 남기는 값: 결과(`ok`·`refused`·`truncated`·`empty`·`broken`·`client_closed`·`rate_ip`·`rate_day`·`upstream_error` 등), 끝난 이유,
+    토큰(입력·출력(thinking 포함)·캐시 읽기/쓰기, 스트림의 `message_start`·`message_delta.usage`), 첫 글자까지·전체 시간(ms),
+    모델, 스트림 여부, 본괘·지괘·변효, 이전 대화 턴 수, 질문(600자)·품은 질문(400자)·풀이(4000자), User-Agent,
+    IP 는 원문 대신 `LOG_SALT` 를 친 sha256 앞 16자(`ipHash`)만.
+  - 403·415·413·400 처럼 검증 단계에서 막힌 요청은 남기지 않는다. 레이트리밋 초과는 남긴다(LLM 호출 없음).
+  - 응답을 다 보낸 뒤 쓰고, 실패해도 응답에는 영향이 없다(fail-open, CloudWatch 에 `log write error` 만 남음).
+- 권한: 역할 inline 정책 `iching-ask-permissions` 에 `AskLogWrite`(dynamodb:PutItem, 이 표만).
+- 환경 변수: `LOG_TABLE`(기본 `iching-ask-log`, 빈 값이면 끔), `LOG_TTL_DAYS`(180), `LOG_TEXT_MAX`(4000), `LOG_SALT`(배포 때 무작위로 지정).
+- 사이트 화면의 問占 안내에 "180일간 보관" 고지가 있다.
+- 리포트: 저장소 루트에서 `npm run stats:ask -- --days 7 --samples 10`(호출 수·결과·토큰·추정 비용·지연·본괘 분포·최근 질문/풀이),
+  `--out .logs-cache/ask.jsonl` 로 원본을 JSONL 로 받아 따로 분석할 수 있다.
+- 단위 검증: `.qa/lambda-log-test.mjs`.
