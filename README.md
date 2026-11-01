@@ -156,6 +156,15 @@ npm run build
 `deploy.sh` 는 `*.wasm` 을 `Content-Type: application/wasm` 으로 따로 올립니다. 이 헤더가 있어야 브라우저가 스트리밍 컴파일하고
 CloudFront 가 압축해서 보냅니다(헤더가 틀려도 동작은 하지만 압축 없이 3.1MB 를 받습니다).
 
+## 접속 통계·호출 기록
+
+- **사이트 접속**: CloudFront 표준 접근 로그를 `s3://iching-webapp-logs-476364780248/cloudfront/` 에 쓴다(180일 뒤 자동 삭제, 보통 수 분~1시간 지연).
+  `npm run stats:site -- --days 7` 이 로그를 `.logs-cache/` 로 받아 페이지 조회·방문자(IP+브라우저)·모바일 비율·공유 링크 유입·유입 경로·시간대·봇 미리보기를 보여 준다.
+- **問占(LLM) 호출**: 람다가 호출마다 DynamoDB `iching-ask-log` 에 토큰·지연·결과·질문·풀이를 남긴다(180일 TTL, IP 는 해시만). 자세한 항목은 `lambda/README.md`.
+  `npm run stats:ask -- --days 7 --samples 10` 으로 호출 수·토큰·추정 비용·첫 글자 지연·본괘 분포·최근 질문과 풀이를 보고,
+  `--out .logs-cache/ask.jsonl` 로 원본을 받아 따로 분석한다.
+- 두 리포트 모두 로컬 aws CLI 자격증명을 쓴다.
+
 ## 동전점법 규칙
 
 1. 동전 3개를 동시에 던진다

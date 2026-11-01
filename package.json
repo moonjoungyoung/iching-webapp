@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "sync:lambda": "node scripts/sync-lambda-data.mjs"
+    "sync:lambda": "node scripts/sync-lambda-data.mjs",
+    "stats:site": "node scripts/stats/site-report.mjs",
+    "stats:ask": "node scripts/stats/ask-report.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d": "^0.21.0",

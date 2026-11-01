@@ -10,7 +10,8 @@
 
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, UpdateCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { createHash, randomUUID } from 'node:crypto';
 // 괘 데이터·점단 규칙(scripts/sync-lambda-data.mjs 로 src 에서 복사). 클라이언트가 보낸 글은 믿지 않는다
 import { getHexagramData, getHexagramBits, getHexagramNumber } from './data/hexagrams.mjs';
 import { interpret } from './data/interpret.mjs';
@@ -20,7 +21,7 @@ const KEY_PARAM = process.env.LLM_KEY_PARAM || '/copilot/jober-chat/production/s
 const MODEL = process.env.LLM_MODEL || 'claude-sonnet-5';
 // 허용 origin 목록(쉼표 구분). Origin 헤더가 있는데 목록에 없으면 403.
 // 목록에 있으면 그 값을 돌려주고, Origin 헤더가 없는 요청(서버 간 호출 등)은 첫 항목을 돌려준다.
-const ALLOW_ORIGINS = (process.env.ALLOW_ORIGIN || 'https://d3hvx0sm85rmzt.cloudfront.net,https://d1vry20p02uvjx.cloudfront.net')
+const ALLOW_ORIGINS = (process.env.ALLOW_ORIGIN || 'https://d3hvx0sm85rmzt.cloudfront.net')
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);
@@ -34,6 +35,11 @@ const MAX_INTENT = 300;
 const MAX_BODY = 16 * 1024; // 요청 본문 상한(바이트)
 const MAX_HISTORY = 10; //   이전 대화 턴 수 상한
 const MAX_TURN = 1000; //    이전 대화 한 턴 글자 수 상한
+// 호출 기록(토큰·지연·질문·풀이 분석용). 표가 없거나 실패해도 응답에는 영향 없음(fail-open)
+const LOG_TABLE = process.env.LOG_TABLE || 'iching-ask-log';
+const LOG_TTL_DAYS = Number(process.env.LOG_TTL_DAYS || 180);
+const LOG_TEXT_MAX = Number(process.env.LOG_TEXT_MAX || 4000);
+const LOG_SALT = process.env.LOG_SALT || ''; // IP 는 원문 대신 소금 친 해시만 남긴다
 
 const ssm = new SSMClient({ region: REGION });
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: REGION }));
@@ -287,6 +293,8 @@ async function readAnthropicStream(res, onText) {
   let stopDetails = null;
   let textBlocks = 0;
   let finished = false;
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  let firstTextAt = null;
 
   const handle = (data) => {
     let ev;
@@ -299,8 +307,17 @@ async function readAnthropicStream(res, onText) {
           textBlocks++;
         }
         break;
+      case 'message_start': {
+        const u = ev.message?.usage || {};
+        usage.input = u.input_tokens || 0;
+        usage.cacheRead = u.cache_read_input_tokens || 0;
+        usage.cacheWrite = u.cache_creation_input_tokens || 0;
+        usage.output = u.output_tokens || 0;
+        break;
+      }
       case 'content_block_delta':
         if (ev.delta && ev.delta.type === 'text_delta' && ev.delta.text) {
+          if (firstTextAt === null) firstTextAt = Date.now();
           text += ev.delta.text;
           onText(ev.delta.text);
         }
@@ -308,6 +325,8 @@ async function readAnthropicStream(res, onText) {
       case 'message_delta':
         if (ev.delta && ev.delta.stop_reason) stopReason = ev.delta.stop_reason;
         if (ev.delta && ev.delta.stop_details) stopDetails = ev.delta.stop_details;
+        // message_delta.usage.output_tokens 는 누적값(thinking 토큰 포함)
+        if (ev.usage && Number.isFinite(ev.usage.output_tokens)) usage.output = ev.usage.output_tokens;
         break;
       case 'message_stop':
         finished = true;
@@ -315,7 +334,7 @@ async function readAnthropicStream(res, onText) {
       case 'error':
         throw new Error(`upstream stream error: ${ev.error?.type || 'unknown'}`);
       default:
-        break; // message_start·content_block_stop·ping
+        break; // content_block_stop·ping
     }
   };
 
@@ -331,12 +350,41 @@ async function readAnthropicStream(res, onText) {
       if (data) handle(data);
     }
   }
-  if (!finished) throw new Error('upstream stream ended early');
-  return { text: text.trim(), stopReason, stopDetails };
+  if (!finished) {
+    const err = new Error('upstream stream ended early');
+    err.partial = { text: text.trim(), usage, firstTextAt };
+    throw err;
+  }
+  return { text: text.trim(), stopReason, stopDetails, usage, firstTextAt };
+}
+
+// KST 날짜(일 단위 파티션 키)
+const kstDay = (ms) => new Date(ms + 9 * 3600 * 1000).toISOString().slice(0, 10);
+const clip = (v, n = LOG_TEXT_MAX) => (typeof v === 'string' ? v.slice(0, n) : v);
+
+/** 호출 한 건을 기록한다. 실패해도 삼키고 로그만 남긴다 */
+async function record(entry) {
+  if (!LOG_TABLE) return;
+  try {
+    const now = Date.now();
+    const item = {
+      pk: `day#${kstDay(entry.startedAt || now)}`,
+      sk: `${new Date(entry.startedAt || now).toISOString()}#${entry.reqId}`,
+      exp: Math.floor(now / 1000) + LOG_TTL_DAYS * 86400,
+      ...entry,
+      question: clip(entry.question, 600),
+      intent: clip(entry.intent, 400),
+      answer: clip(entry.answer),
+    };
+    for (const k of Object.keys(item)) if (item[k] === undefined || item[k] === null || item[k] === '') delete item[k];
+    await ddb.send(new PutCommand({ TableName: LOG_TABLE, Item: item }));
+  } catch (e) {
+    console.error('log write error:', e?.name || e);
+  }
 }
 
 /** 검증 → 레이트리밋 → Anthropic 스트림 → (스트림 또는 JSON) 응답 */
-async function serve(event, out) {
+async function serve(event, out, ctx = {}) {
   const { origin, allowed } = checkOrigin(event);
   // 허용되지 않은 사이트에서 온 요청은 어떤 처리(레이트리밋·LLM 호출)도 하기 전에 막는다
   if (!allowed) return out.json(403, { error: 'forbidden origin' }, origin);
@@ -374,18 +422,37 @@ async function serve(event, out) {
 
   // 레이트리밋
   const ip = (event?.requestContext?.http?.sourceIp || 'unknown').replace(/[^0-9a-fA-F:.]/g, '');
+  const startedAt = Date.now();
+  const changingIdx = Array.isArray(payload?.reading?.changing) ? payload.reading.changing.filter((i) => Number.isInteger(i)) : undefined;
+  const logBase = {
+    reqId: ctx.awsRequestId || randomUUID(),
+    startedAt,
+    stream: wantStream,
+    origin,
+    ipHash: createHash('sha256').update(`${LOG_SALT}|${ip}`).digest('hex').slice(0, 16),
+    ua: clip(header(event, 'user-agent'), 200),
+    model: MODEL,
+    primary: reading.primary.number,
+    changed: reading.changed ? reading.changed.number : undefined,
+    changing: changingIdx && changingIdx.length ? changingIdx.join(',') : undefined,
+    historyTurns: history.length,
+    question,
+    intent,
+  };
+  const done = (fields) => record({ ...logBase, ...fields, totalMs: Date.now() - startedAt });
   const minute = Math.floor(Date.now() / 60000);
   const day = new Date().toISOString().slice(0, 10);
   const okIp = await allow(`ip#${ip}#${minute}`, PER_IP_PER_MIN, 120);
-  if (!okIp) return out.json(429, { error: '요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.' }, origin);
+  if (!okIp) { await done({ outcome: 'rate_ip' }); return out.json(429, { error: '요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.' }, origin); }
   const okGlobal = await allow(`day#${day}`, GLOBAL_PER_DAY, 90000);
-  if (!okGlobal) return out.json(429, { error: '오늘 질문 한도에 도달했습니다. 내일 다시 시도해 주세요.' }, origin);
+  if (!okGlobal) { await done({ outcome: 'rate_day' }); return out.json(429, { error: '오늘 질문 한도에 도달했습니다. 내일 다시 시도해 주세요.' }, origin); }
 
   let apiKey;
   try {
     apiKey = await getApiKey();
   } catch (e) {
     console.error('key load error:', e?.message);
+    await done({ outcome: 'key_error' });
     return out.json(500, { error: '서버 설정 오류입니다.' }, origin);
   }
 
@@ -425,12 +492,14 @@ async function serve(event, out) {
     });
   } catch (e) {
     console.error('fetch error:', e?.message);
+    await done({ outcome: 'network_error' });
     return out.json(502, { error: MSG.network }, origin);
   }
   // 응답 헤더 단계의 오류(과부하 등)는 스트림을 열기 전이라 일반 JSON 상태 코드로 답한다
   if (!res.ok) {
     const t = await res.text().catch(() => '');
     console.error('anthropic error', res.status, t.slice(0, 300));
+    await done({ outcome: 'upstream_error', upstreamStatus: res.status });
     return out.json(502, { error: MSG.upstream }, origin);
   }
 
@@ -449,6 +518,16 @@ async function serve(event, out) {
     return { answer: r.text, stopReason: r.stopReason };
   };
 
+  const usageFields = (r) => ({
+    inputTokens: r?.usage?.input,
+    outputTokens: r?.usage?.output,
+    cacheReadTokens: r?.usage?.cacheRead,
+    cacheWriteTokens: r?.usage?.cacheWrite,
+    // 첫 글자까지: 요청을 받은 때부터(키 로드·레이트리밋·Anthropic 첫 응답·thinking 포함)
+    firstTextMs: r?.firstTextAt ? r.firstTextAt - startedAt : undefined,
+  });
+  const outcomeOf = (v) => (v.answer ? 'ok' : v.refused ? 'refused' : v.truncated ? 'truncated' : 'empty');
+
   if (!wantStream) {
     // 예전 클라이언트: 전체를 모아 한 번에 JSON
     let r;
@@ -456,9 +535,12 @@ async function serve(event, out) {
       r = await readAnthropicStream(res, () => {});
     } catch (e) {
       console.error('stream read error:', e?.message);
+      await done({ outcome: 'broken', ...usageFields(e?.partial), answer: e?.partial?.text });
       return out.json(502, { error: MSG.broken }, origin);
     }
     const v = verdict(r);
+    await done({ outcome: outcomeOf(v), stopReason: r.stopReason, ...usageFields(r), answer: r.text,
+      refusalCategory: r.stopDetails?.category });
     if (v.answer) return out.json(200, { answer: v.answer }, origin);
     if (v.empty) return out.json(502, { error: v.error }, origin);
     // 거절·빈 max_tokens 는 장애가 아니라 정상 응답이므로 200 + error(클라이언트는 대화 기록에 넣지 않는다)
@@ -469,38 +551,45 @@ async function serve(event, out) {
   const s = out.open(origin);
   s.onClose(() => upstreamAbort.abort()); // 사용자가 창을 닫으면 위쪽 호출도 그만둔다
   s.line({ type: 'start' }); // 첫 바이트를 바로 보내 중간 버퍼링을 피한다
+  let logFields;
   try {
     const r = await readAnthropicStream(res, (text) => s.line({ type: 'delta', text }));
     const v = verdict(r);
     if (v.answer) s.line({ type: 'done', stop_reason: v.stopReason });
     else s.line({ type: 'error', error: v.error, ...(v.refused ? { refused: true } : {}), ...(v.truncated ? { truncated: true } : {}) });
+    logFields = { outcome: outcomeOf(v), stopReason: r.stopReason, ...usageFields(r), answer: r.text,
+      refusalCategory: r.stopDetails?.category };
   } catch (e) {
     console.error('stream relay error:', e?.message);
     s.line({ type: 'error', error: MSG.broken });
+    // 사용자가 창을 닫아 위쪽을 끊은 경우도 여기로 온다(받은 만큼 기록)
+    logFields = { outcome: upstreamAbort.signal.aborted ? 'client_closed' : 'broken', ...usageFields(e?.partial), answer: e?.partial?.text };
   } finally {
     s.end();
   }
+  // 응답을 다 보낸 뒤 기록(사용자 체감 지연에 영향 없음)
+  await done(logFields);
   return undefined;
 }
 
 // 단위 검증용(외부 호출 없이 맥락 구성·origin 판정·SSE 해석 확인)
-export const _test = { buildContext, checkOrigin, sanitizeIntent, rebuildReading, readAnthropicStream };
+export const _test = { buildContext, checkOrigin, sanitizeIntent, rebuildReading, readAnthropicStream, kstDay };
 
 const HAS_STREAMING = typeof globalThis.awslambda !== 'undefined'
   && typeof globalThis.awslambda.streamifyResponse === 'function';
 
 export const handler = HAS_STREAMING
-  ? awslambda.streamifyResponse(async (event, responseStream) => {
+  ? awslambda.streamifyResponse(async (event, responseStream, context) => {
     const out = streamOut(responseStream);
     try {
-      await serve(event, out);
+      await serve(event, out, context);
     } catch (e) {
       console.error('handler error:', e?.message);
       if (!out.used) out.json(500, { error: '서버 오류입니다.' }, checkOrigin(event).origin);
     }
   })
-  : async (event) => {
+  : async (event, context) => {
     const out = bufferedOut();
-    await serve(event, out);
+    await serve(event, out, context);
     return out.result;
   };
