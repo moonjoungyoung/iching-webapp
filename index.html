@@ -127,24 +127,17 @@
 
   <!-- 던지기 화면: 인트로 다음의 단 한 장 -->
   <main id="hud" class="hud" hidden>
-    <div class="ask-line">
-      <label for="question-input" class="ask-mark hanja"><span aria-hidden="true">問</span><span class="sr-only">물을 것(선택)</span></label>
-      <textarea id="question-input" class="ask-field" rows="1" maxlength="200" placeholder="물을 것이 있다면 적어 두세요 (선택)" aria-describedby="q-privacy"></textarea>
-      <p id="q-privacy" class="sr-only">물음은 공유 링크에 담기지 않습니다.</p>
-    </div>
+    <!-- 품은 물음 한 줄: 누르면 물음 창이 다시 열린다(결과가 있는 동안은 잠김) -->
+    <button id="ask-line" class="ask-line" type="button" aria-haspopup="dialog" aria-controls="question-modal">
+      <span class="ask-mark hanja" aria-hidden="true">問</span><span class="ask-sr sr-only"></span><span class="ask-text"></span>
+    </button>
     <div class="hud-bottom">
       <div id="coin-toast" class="coin-toast" role="status" aria-live="polite"></div>
-      <!-- 처음 쓸 때 한 번: 던지는 법 안내(첫 던지기에 사라진다. 메뉴의 '던지는 법'으로 다시 볼 수 있다) -->
-      <div id="coach" class="coach" role="group" aria-label="던지는 법" hidden>
-        <p class="coach-text"><span class="coach-main"></span><span class="coach-sub"></span></p>
-        <button id="coach-ok" class="coach-btn" type="button">알겠어요</button>
-      </div>
-      <p class="throw-guide">그 물음을 마음에 깊이 품고 여섯 번 던지세요</p>
       <ol id="ladder" class="ladder" aria-label="괘를 세우는 여섯 효"></ol>
       <div class="hud-actions">
         <button id="throw-btn" class="btn btn--throw" type="button" disabled aria-describedby="throw-hint">
           <span class="charge" aria-hidden="true"><i id="charge-bar"></i></span>
-          <span class="throw-step"><span id="throw-yao" class="throw-yao hanja">初爻</span><span id="throw-count" class="throw-count">1/6</span></span><span class="throw-text"><span class="throw-label">판을 펴는 중</span><span class="throw-sub" hidden></span></span>
+          <span class="throw-step"><span id="throw-yao" class="throw-yao hanja">初爻</span><span id="throw-count" class="throw-count">1/6</span></span><span class="throw-text"><span class="throw-label">판을 펴는 중</span></span>
         </button>
         <button id="view-result-btn" class="btn btn--throw btn--ghost" type="button" hidden>괘 다시 보기</button>
         <p id="throw-hint" class="throw-hint" aria-live="polite"></p>
@@ -153,6 +146,48 @@
       </div>
     </div>
   </main>
+
+  <!-- 물음 창: 인트로 다음 처음 뜨는 한지 카드. 물음(선택)과 던지는 법, 시작 -->
+  <div id="question-modal" class="qm-wrap" hidden>
+    <div class="qm-backdrop"></div>
+    <section class="qm-card" role="dialog" aria-modal="true" aria-labelledby="qm-title" aria-describedby="qm-lead">
+      <div class="qm-body">
+        <header class="qm-head">
+          <span class="seal qm-seal hanja" aria-hidden="true">問</span>
+          <h2 id="qm-title" class="qm-title" tabindex="-1"></h2>
+        </header>
+        <p id="qm-lead" class="qm-lead"></p>
+        <div class="qm-field">
+          <label for="question-input" class="sr-only">물음(선택)</label>
+          <textarea id="question-input" class="qm-input" rows="3" maxlength="200" enterkeyhint="go" aria-describedby="qm-helper qm-privacy"></textarea>
+          <div class="qm-helper-row">
+            <p id="qm-helper" class="qm-helper"></p>
+            <span id="qm-count" class="qm-count" aria-hidden="true">0/200</span>
+          </div>
+        </div>
+        <div id="qm-howto" class="qm-howto" role="group" aria-labelledby="qm-howto-title" data-mode="mouse">
+          <span class="qm-glyph" aria-hidden="true">
+            <!-- 흔드는 폰 -->
+            <svg class="g-shake" viewBox="0 0 48 48" width="48" height="48"><g class="g-phone"><rect x="17" y="9" width="14" height="27" rx="2.6"/><path d="M22 12.5h4"/><circle cx="24" cy="32.2" r="0.9" class="g-dot"/></g><path class="g-arc g-arc-l" d="M11.5 16.5q-3.4 6.5 0 13"/><path class="g-arc g-arc-r" d="M36.5 16.5q3.4 6.5 0 13"/><path class="g-base" d="M14 42h20"/></svg>
+            <!-- 누르는 손가락 -->
+            <svg class="g-touch" viewBox="0 0 48 48" width="48" height="48"><circle class="g-ring" cx="20.6" cy="10.2" r="6.2"/><path class="g-finger" d="M18 27V11a2.6 2.6 0 0 1 5.2 0v10.5M23.2 19.6a2.4 2.4 0 0 1 4.8 0v2.6M28 21a2.3 2.3 0 0 1 4.6 0v2.4M32.6 22.6a2.2 2.2 0 0 1 4.4 0V31c0 6.2-3.9 10-9.6 10h-1.8c-3.3 0-5.4-1.3-7.3-4.1l-5-7.4a2.4 2.4 0 0 1 3.8-2.9L18 27"/></svg>
+            <!-- 마우스 누르기 -->
+            <svg class="g-mouse" viewBox="0 0 48 48" width="48" height="48"><path class="g-click" d="M19.6 13.5V18.5h4.4v-6.6a4.6 4.6 0 0 0-4.4 1.6z"/><rect x="15" y="8" width="18" height="29" rx="9"/><path d="M24 8v10.5M15 18.5h18"/><path class="g-ray" d="M11 9.5l-2.6-2.4M9.8 15.5H6.4"/></svg>
+          </span>
+          <div class="qm-howto-copy">
+            <h3 id="qm-howto-title" class="qm-howto-title"></h3>
+            <p id="qm-howto-text" class="qm-howto-text"></p>
+          </div>
+        </div>
+      </div>
+      <footer class="qm-foot">
+        <button id="qm-start" class="btn btn--ink qm-start" type="button"></button>
+        <button id="qm-skip" class="qm-skip" type="button"></button>
+        <p id="qm-ios" class="qm-note" hidden></p>
+        <p id="qm-privacy" class="qm-note"></p>
+      </footer>
+    </section>
+  </div>
 
   <!-- ⑤ 결과: 한지 두루마리 -->
   <div id="result-modal" class="sheet-wrap" hidden>
