@@ -85,7 +85,6 @@ const els = {
   throwLabel: $('#throw-btn .throw-label'),
   throwCount: $('#throw-count'),
   throwHint: $('#throw-hint'),
-  chargeBar: $('#charge-bar'),
   hudManual: $('#hud-manual'),
   noStageBtn: $('#nostage-btn'),
   resultSource: $('#result-source'),
@@ -248,11 +247,9 @@ export function setMotionAvailable(on) {
   if (lastThrowState) setThrowState(lastThrowState);
 }
 
-/** 흔들어 모은 기운(0~1)을 던지기 버튼 윗선에 보여 준다 */
+/** 흔드는 중이면 던지기 버튼 테두리만 은은하게 밝힌다(따로 차오르는 막대는 두지 않는다) */
 export function setCharge(energy) {
-  const e = Math.max(0, Math.min(1, energy));
-  els.chargeBar.style.transform = `scaleX(${e})`;
-  els.throwBtn.classList.toggle('is-charging', e > 0.04);
+  els.throwBtn.classList.toggle('is-charging', energy > 0.04);
 }
 
 /** 던지기 화면(인트로 바로 다음의 한 장) */
